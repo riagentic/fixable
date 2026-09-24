@@ -28,8 +28,9 @@ import type { RootChange, RootOp } from "../type/check.ts";
  *
  *  Every one of these is a directory the system already treats as "files from
  *  elsewhere, merged in order" — that is what makes writing to it additive
- *  rather than an edit. The `99-` prefix puts Fixable last, so a drop-in the
- *  user or the distribution added later still wins. */
+ *  rather than an edit. Files are read in name order and the last value wins,
+ *  so a name must sort after anything that would undo the fix at boot —
+ *  Debian's `99-sysctl.conf` (→ /etc/sysctl.conf) included. */
 export const DROPIN_DIRS: readonly string[] = [
   "/etc/sysctl.d",
   "/etc/modprobe.d",
@@ -43,8 +44,14 @@ export const DROPIN_DIRS: readonly string[] = [
 ];
 
 const DROPIN = new RegExp(
-  `^(?:${DROPIN_DIRS.join("|")})/99-fixable(?:-[a-z0-9-]+)?\\.conf$`,
+  `^(?:${DROPIN_DIRS.join("|")})/99-(?:zz-)?fixable(?:-[a-z0-9-]+)?\\.conf$`,
 );
+
+/** Drop-ins renamed since a release wrote them, new → old. The next plan that
+ *  writes the new name carries the old file's blocks over and removes it. */
+export const MOVED_DROPINS: ReadonlyMap<string, string> = new Map([
+  ["/etc/sysctl.d/99-zz-fixable.conf", "/etc/sysctl.d/99-fixable.conf"],
+]);
 
 /** Is `path` a file this app is allowed to create, replace and delete? */
 export const isDropIn = (path: string): boolean => DROPIN.test(path);
@@ -205,8 +212,8 @@ export const buildScript = (
   }
   return [
     "#!/bin/sh",
-    "# Written by Fixable, run once as root, then deleted. Every line of this",
-    "# script is shown in the app before it runs.",
+    "# Written by Fixable, run once as root. Every line of this script is",
+    "# shown in the app before it runs.",
     "umask 077",
     ...ops.map(render),
     `echo "${MARK}done"`,

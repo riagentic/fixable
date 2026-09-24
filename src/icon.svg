@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512"
+  height="512">
+  <!-- Fixable: a check whose long arm ends in an open-end wrench. Source of src/icon.png (aio reads only the PNG). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b8bff" />
+      <stop offset="1" stop-color="#1650c4" />
+    </linearGradient>
+    <mask id="jaw">
+      <rect width="512" height="512" fill="#fff" />
+      <g transform="rotate(-50.7 372 176)">
+        <rect x="372" y="150" width="90" height="52" fill="#000" />
+        <circle cx="372" cy="176" r="26" fill="#000" />
+      </g>
+    </mask>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#tile)" />
+  <g transform="translate(-16 14)">
+    <g fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"
+      mask="url(#jaw)">
+      <path d="M132 272 L222 360 L352 200" fill="none" stroke-width="64" />
+      <circle cx="372" cy="176" r="76" stroke="none" />
+    </g>
+  </g>
+</svg>

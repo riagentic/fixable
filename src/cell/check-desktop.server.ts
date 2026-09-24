@@ -6,7 +6,7 @@
 import type { Check, Finding } from "../type/check.ts";
 import type { SettingPolicy } from "../type/policy.ts";
 import { isBad } from "../lib/verdict.ts";
-import { gsGet, gsSet, pickSchema } from "./sys.server.ts";
+import { gsGet, gsReset, gsSet, pickSchema } from "./sys.server.ts";
 import { LOCK_POLICIES } from "../lib/policy/lock.ts";
 import { PRIVACY_POLICIES } from "../lib/policy/privacy.ts";
 import { MEDIA_POLICIES } from "../lib/policy/media.ts";
@@ -66,12 +66,18 @@ export function settingCheck(p: SettingPolicy): Check {
           `The previous value (${raw}) is recorded and Undo restores it. ` +
           `Nothing is deleted and no program is stopped.`,
         apply: async () => {
-          const { previous } = await gsSet(schema, p.key, p.safe);
+          const { previous, wasDefault } = await gsSet(schema, p.key, p.safe);
           return {
             summary: `${schema} ${p.key}: ${previous ?? "unset"} -> ${p.safe}`,
-            revert: previous === null ? undefined : async () => {
-              await gsSet(schema, p.key, previous);
-            },
+            // A key that was at its default goes back to BEING default, not to
+            // a pinned copy of today's default value.
+            revert: previous === null
+              ? undefined
+              : wasDefault
+              ? () => gsReset(schema, p.key)
+              : async () => {
+                await gsSet(schema, p.key, previous);
+              },
           };
         },
       };

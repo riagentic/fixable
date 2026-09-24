@@ -6,16 +6,21 @@
 import type { Check, Finding } from "../type/check.ts";
 import type { PermPolicy } from "../type/policy.ts";
 import { PERM_POLICIES } from "../lib/policy/perms.ts";
-import { home, octal, restoreMode, tighten } from "./sys.server.ts";
+import { applyAll, home, octal, restoreMode, tighten } from "./sys.server.ts";
 import { join } from "@std/path";
 
 /** Mode and kind in one call — the kind decides whether the owner's execute
- *  bit may be taken away, so both have to be read together. */
+ *  bit may be taken away, so both have to be read together.
+ *
+ *  lstat, and a symlink is skipped: its own mode means nothing, and following
+ *  it reports the target — `~/.bash_history -> /dev/null` read as a 0666
+ *  history file, with a fix that could never succeed. */
 async function statOf(
   path: string,
 ): Promise<{ mode: number; dir: boolean } | null> {
   try {
-    const st = await Deno.stat(path);
+    const st = await Deno.lstat(path);
+    if (st.isSymlink) return null;
     return st.mode === null ? null : { mode: st.mode, dir: st.isDirectory };
   } catch {
     return null;
@@ -107,22 +112,19 @@ export function permCheck(
           ? `${names[0]} is open beyond you`
           : `${names.length} paths too open: ${names.join(", ")}`,
         apply: async () => {
-          const undone: (() => Promise<void>)[] = [];
           const done: string[] = [];
-          for (const o of offenders) {
+          const revert = await applyAll(offenders, async (o) => {
             const next = wanted(p.target, o) & o.bits;
             const { previous } = await tighten(o.path, next);
-            undone.push(restoreMode(o.path, previous));
             done.push(`${o.path} ${octal(previous)} -> ${octal(next)}`);
-          }
+            return restoreMode(o.path, previous);
+          });
           return {
             // The previous mode goes into the summary, not just into the undo
             // closure: the log outlives the process, and a change you cannot
             // read back is not a change you can reason about later.
             summary: `chmod: ${done.join(", ")}`,
-            revert: async () => {
-              for (const r of undone) await r();
-            },
+            revert,
           };
         },
       };

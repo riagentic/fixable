@@ -1,18 +1,19 @@
 // The privilege boundary. These are the tests that decide whether "no fix can
 // harm this machine" is a claim or a property.
 import { assertEquals, assertThrows } from "@std/assert";
-import type { RootOp } from "../../type/check.ts";
+import type { RootOp } from "../../src/type/check.ts";
 import {
   buildScript,
   commandLines,
   invertChanges,
   isDropIn,
+  MOVED_DROPINS,
   narrows,
   parseResult,
   rootOpIsSafe,
   shq,
-} from "../../lib/root.ts";
-import { parseDropIn, renderDropIn, withBlock } from "../../lib/dropin.ts";
+} from "../../src/lib/root.ts";
+import { parseDropIn, renderDropIn, withBlock } from "../../src/lib/dropin.ts";
 
 // ------------------------------------------------------------ chmod narrows
 
@@ -111,7 +112,7 @@ Deno.test("a sysctl op can name nothing outside /proc/sys", () => {
   for (
     const key of [
       "kernel.dmesg_restrict; rm -rf /",
-      "../../etc/passwd",
+      "../../src/etc/passwd",
       "kernel.$(id)",
       "",
     ]
@@ -184,11 +185,14 @@ Deno.test("the script really writes what it says, and reports each step", async 
     const target = `${dir}/99-fixable.conf`;
     const script = buildScript(SCRIPT_OPS)
       .replaceAll("/etc/sysctl.d/99-fixable.conf", target);
-    const path = `${dir}/plan.sh`;
-    await Deno.writeTextFile(path, script);
-
-    const out = await new Deno.Command("sh", { args: [path], stdout: "piped" })
-      .output();
+    // Fed on stdin, exactly as root.server.ts hands it to the root shell —
+    // the heredoc has to survive being read from a pipe.
+    const sh = new Deno.Command("sh", { stdin: "piped", stdout: "piped" })
+      .spawn();
+    const writer = sh.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(script));
+    await writer.close();
+    const out = await sh.output();
     const { steps, finished } = parseResult(
       new TextDecoder().decode(out.stdout),
     );
@@ -301,4 +305,15 @@ Deno.test("the preview shows the payload, not just that there is one", () => {
   const lines = commandLines(SCRIPT_OPS);
   assertEquals(lines[0], "chmod 640 /etc/shadow    # was 644");
   assertEquals(lines[1]!.includes("fs.protected_regular = 2"), true);
+});
+
+Deno.test("a moved drop-in sorts after what would override it at boot", () => {
+  for (const [now, was] of MOVED_DROPINS) {
+    assertEquals([isDropIn(now), isDropIn(was)], [true, true]);
+    const name = now.split("/").pop()!;
+    // Debian's link to /etc/sysctl.conf, and procps' protected_* defaults.
+    for (const other of ["99-sysctl.conf", "99-protect-links.conf"]) {
+      assertEquals(name > other, true, `${name} sorts before ${other}`);
+    }
+  }
 });

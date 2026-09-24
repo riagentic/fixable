@@ -6,6 +6,7 @@ import { clock } from "../lib/format.ts";
 import { CATEGORY_MEANING, countByCategory } from "../lib/category.ts";
 import { CATEGORIES } from "../type/issue.ts";
 import { ViewSwitch } from "./ViewSwitch.tsx";
+import { Logo } from "./Art.tsx";
 
 const BANDS: Severity[] = ["critical", "major", "minor"];
 
@@ -13,7 +14,7 @@ const BANDS: Severity[] = ["critical", "major", "minor"];
  *  severity bands alone do not tell you whether to worry about your data or
  *  your disk, so the categories get their own row. */
 function Breakdown() {
-  const counts = countByCategory(issues.shown(), CATEGORIES);
+  const counts = countByCategory(issues.issues, CATEGORIES);
   return (
     <div className="breakdown" t="breakdown">
       {counts.map(([cat, n]) => (
@@ -49,18 +50,19 @@ function Tally() {
 }
 
 export function Header() {
-  // Both numbers come from the same view, so the score can never disagree with
-  // the rows under it.
-  const found = issues.shown().length;
-  const possible = issues.possibleShown();
+  // The header speaks for the whole machine; the switch below says how much of
+  // it each view holds, and the table shows one view.
+  const found = issues.issues.length;
+  const possible = issues.possibleAll();
   const canFix = issues.fixableCount();
   const canRoot = issues.rootCount();
-  const busy = issues.scanning || issues.fixing.length > 0 || issues.rootFixing;
+  const busy = issues.busy();
   return (
     <header className="header">
+      <Logo />
       <div className="brand">
         Fixable
-        <small t="status">
+        <small t="status" aria-live="polite">
           {issues.lastMeasure
             ? `monitoring · updated ${clock(issues.lastMeasure)}`
             : "starting monitor…"}
@@ -95,6 +97,7 @@ export function Header() {
               type="button"
               t="scan"
               className="btn"
+              disabled={busy}
               onClick={() => issues.scan()}
             >
               Scan
@@ -118,7 +121,9 @@ export function Header() {
           disabled={canRoot === 0 || busy}
           onClick={() => issues.planRootFixes()}
         >
-          {issues.rootFixing ? "Working…" : "Fix all (sudo required)"}
+          {issues.rootFixing && !issues.rootPlan
+            ? "Working…"
+            : "Fix all (sudo required)"}
           {canRoot > 0 ? ` (${canRoot})` : ""}
         </button>
       </div>

@@ -28,8 +28,10 @@ const CORE: GitPolicy[] = [
     missingIsBad: true,
     detail: "malformed or malicious objects are accepted without checking",
     because:
-      "Adds integrity checking to fetch and push. A repository that fails " +
-      "the check was already broken.",
+      "Adds integrity checking to fetch and push. The check is strict: plenty " +
+      "of real, working repositories carry old malformed objects (zero-padded " +
+      "modes, bad dates) and then refuse to clone until you add per-object " +
+      "`fsck.skipList` exceptions.",
   },
   {
     id: "git-fsck-fetch",
@@ -41,7 +43,9 @@ const CORE: GitPolicy[] = [
     safe: "true",
     missingIsBad: true,
     detail: "objects arriving from a remote are trusted as-is",
-    because: "Adds integrity checking on fetch only. Undo removes the key.",
+    because:
+      "Adds integrity checking on fetch only — strict enough that some real " +
+      "repositories stop fetching. Undo removes the key.",
   },
   {
     id: "git-fsck-receive",
@@ -53,7 +57,9 @@ const CORE: GitPolicy[] = [
     safe: "true",
     missingIsBad: true,
     detail: "objects pushed into a local repository are trusted as-is",
-    because: "Adds integrity checking on receive. Undo removes the key.",
+    because:
+      "Adds integrity checking on receive — strict enough that a push of " +
+      "some real histories is refused. Undo removes the key.",
   },
   {
     id: "git-protocol-file",
@@ -63,24 +69,31 @@ const CORE: GitPolicy[] = [
     weight: 74,
     key: "protocol.file.allow",
     safe: "user",
-    missingIsBad: true,
+    // `user` has been git's own default since 2.38.1, so only a value somebody
+    // set is a finding — an unset key already blocks it.
+    missingIsBad: false,
     detail:
       "a cloned repository can pull submodules from local paths (CVE-2022-39253)",
     because:
       "'user' allows file:// when you ask for it directly and blocks it " +
-      "during clone. This is git's own recommended value.",
+      "during clone. This is git's own default since 2.38.1.",
   },
   {
     id: "git-symlinks-core",
-    title: "Git creates symlinks from repository contents unchecked",
-    category: "security",
+    title: "Git checks out symlinks as plain text files",
+    category: "settings",
     severity: "minor",
     weight: 52,
     key: "core.symlinks",
     safe: "true",
     missingIsBad: false,
-    detail: "core.symlinks is switched off, which changes checkout behaviour",
-    because: "Restores git's default. Undo puts your value back.",
+    detail:
+      "core.symlinks is off, so every symlink in a repository arrives as a " +
+      "small file holding its target path, and builds that follow it break",
+    because:
+      "Restores git's default. Somebody usually turned it off on purpose — " +
+      "a filesystem without symlinks, or to keep a repository's links from " +
+      "pointing outside it. Undo puts your value back.",
   },
   {
     id: "git-default-branch",
@@ -157,14 +170,16 @@ const MORE: Row[] = [
   [
     "credentials-in-url",
     "transfer.credentialsInUrl",
-    "die",
+    // `warn`, not `die`: `die` breaks fetch and push on every remote that
+    // already has a token in its URL, the day it is written.
+    "warn",
     true,
     "security",
     "major",
     80,
-    "Git accepts passwords embedded in remote URLs",
+    "Git uses passwords embedded in remote URLs without a word",
     "a URL with credentials ends up in .git/config, in your shell history, and in every log that records the command",
-    "Git refuses such a URL and tells you to use a credential helper. Existing remotes are not rewritten.",
+    "Git warns each time it uses such a URL, and nothing is refused, so a remote that still carries a token keeps working. Move those remotes to a credential helper, then `die` is the stricter setting.",
   ],
   [
     "untracked-cache",
@@ -314,7 +329,8 @@ const MORE: Row[] = [
     "clean-require-force",
     "clean.requireForce",
     "true",
-    true,
+    // Already git's default, so only an explicit `false` is a finding.
+    false,
     "settings",
     "major",
     67,

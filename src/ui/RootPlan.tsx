@@ -59,10 +59,14 @@ export function RootPlan() {
         ))}
       </ol>
 
-      <details className="plan-script" t="rootScript">
-        <summary>Show the exact commands ({plan.lines.length})</summary>
-        <pre>{plan.lines.join("\n")}</pre>
-      </details>
+      {
+        /* Always open: a script behind a disclosure triangle is a script the
+          password can be typed without anyone having seen. */
+      }
+      <div className="plan-script">
+        <h3>The exact commands ({plan.lines.length})</h3>
+        <pre t="rootScript">{plan.lines.join("\n")}</pre>
+      </div>
     </section>
   );
 }

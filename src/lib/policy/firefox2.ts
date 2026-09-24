@@ -121,13 +121,13 @@ const ROWS: Row[] = [
     "breach-alerts",
     "signon.management.page.breach-alerts.enabled",
     "true",
-    "true",
     "false",
-    "privacy",
+    "true",
+    "security",
     30,
-    "Saved logins are checked against a breach service",
-    "the sites you have accounts on are queried against a remote list",
-    "Your saved logins stop being enumerated over the network.",
+    "Firefox does not warn when a site you log in to is breached",
+    "a site you keep a saved login for can publish a breach and nothing tells you to change that password",
+    "Firefox downloads the public breach list and compares it on this machine; nothing about your logins is sent anywhere.",
   ],
 
   // ---------------------------------------------- calls Firefox makes itself
@@ -343,7 +343,8 @@ const ROWS: Row[] = [
     "cookie-behavior",
     "network.cookie.cookieBehavior",
     "5",
-    "<5",
+    // 1 and 2 block third-party cookies outright — stricter, not a fault.
+    "=0|3|4",
     "5",
     "privacy",
     69,

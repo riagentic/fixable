@@ -1,6 +1,12 @@
 import { assertEquals } from "@std/assert";
-import type { Issue, Tier } from "../../type/issue.ts";
-import { inView, isView, possibleIn, VIEWS, visible } from "../../lib/view.ts";
+import type { Issue, Tier } from "../../src/type/issue.ts";
+import {
+  inView,
+  isView,
+  possibleIn,
+  VIEWS,
+  visible,
+} from "../../src/lib/view.ts";
 
 const remedy = (tier: Tier): Issue["remedy"] => {
   switch (tier) {

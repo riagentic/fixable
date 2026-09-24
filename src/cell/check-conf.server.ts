@@ -6,7 +6,12 @@ import type { Check, Finding } from "../type/check.ts";
 import type { ConfPolicy } from "../type/policy.ts";
 import { disableKey, readKey, upsertKey } from "../lib/conf.ts";
 import { has, home, readText } from "./sys.server.ts";
-import { parentExists, restoreConf, writeConf } from "./conf.server.ts";
+import {
+  isSymlink,
+  parentExists,
+  restoreConf,
+  writeConf,
+} from "./conf.server.ts";
 import { GNUPG_POLICIES } from "../lib/policy/gnupg.ts";
 import { TOOL_POLICIES } from "../lib/policy/tools.ts";
 import { TOOL2_POLICIES } from "../lib/policy/tools2.ts";
@@ -20,6 +25,17 @@ export const CONF_POLICIES: ConfPolicy[] = [
   ...TOOL3_POLICIES,
 ];
 
+/** Does `current` already say `safe`? For a list, as one of its flags. */
+const holds = (p: ConfPolicy, current: string): boolean => {
+  const safe = p.safe.toLowerCase();
+  const v = current.toLowerCase();
+  return p.list ? v.split(/[,\s]+/).includes(safe) : v === safe;
+};
+
+/** The value to write: a list keeps every flag it had. */
+const wanted = (p: ConfPolicy, current: string | null): string =>
+  p.list && current ? `${current},${p.safe}` : p.safe;
+
 const shows = (p: ConfPolicy, value: string) =>
   p.safe === "" ? `${p.key} (set)` : `${p.key} = ${value}`;
 
@@ -27,6 +43,8 @@ export function confCheck(p: ConfPolicy): Check {
   const auto = p.advisory === undefined;
   const action = p.presentIsBad
     ? `Comments out \`${p.key}\` in ~/${p.file}`
+    : p.list
+    ? `Adds \`${p.safe}\` to \`${p.key}\` in ~/${p.file}`
     : `Sets \`${p.key}\` to \`${p.safe || "(on)"}\` in ~/${p.file}`;
   return {
     id: p.id,
@@ -55,17 +73,20 @@ export function confCheck(p: ConfPolicy): Check {
         if (current === null) return null;
       } else {
         if (current === null && !p.missingIsBad) return null;
-        if (
-          current !== null && current.toLowerCase() === p.safe.toLowerCase()
-        ) {
-          return null;
-        }
+        if (current !== null && holds(p, current)) return null;
       }
 
       const detail = `${p.detail} (${
         current === null ? `${p.key} unset` : shows(p, current)
       })`;
       if (!auto) return { detail };
+      // A linked dotfile (stow, a dotfiles repo) is reported without a button:
+      // writeConf would refuse it anyway, and a Fix that can only fail is noise.
+      if (await isSymlink(path)) {
+        return {
+          detail: `${detail} — ~/${p.file} is a symlink; edit it by hand`,
+        };
+      }
 
       return {
         detail,
@@ -73,7 +94,7 @@ export function confCheck(p: ConfPolicy): Check {
           const base = text ?? "";
           const next = p.presentIsBad
             ? disableKey(base, p.format, p.key, p.section)
-            : upsertKey(base, p.format, p.key, p.safe, p.section);
+            : upsertKey(base, p.format, p.key, wanted(p, current), p.section);
           const write = await writeConf(path, next);
           // If the file moves on before this is undone — the next fix in a
           // "Fix all" run usually does exactly that — put back this one key
@@ -85,7 +106,9 @@ export function confCheck(p: ConfPolicy): Check {
           return {
             summary: `${p.file}: ${p.key} ${
               current === null ? "unset" : `= ${current}`
-            } -> ${p.presentIsBad ? "commented out" : p.safe || "(on)"}`,
+            } -> ${
+              p.presentIsBad ? "commented out" : wanted(p, current) || "(on)"
+            }`,
             revert: restoreConf(write, narrow),
           };
         },

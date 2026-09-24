@@ -47,7 +47,7 @@ const ROWS: Row[] = [
     59,
     "Enhanced Safe Browsing is on",
     "the URL of every page you visit is sent for scoring, not just a hash prefix",
-    "Standard Safe Browsing stays on and still blocks known malware and phishing.",
+    "Standard Safe Browsing stays on and still blocks known malware and phishing, but it answers from a list refreshed every half hour, so a brand-new phishing page gets through that Enhanced would have caught.",
   ],
   [
     "safebrowsing-reporting",

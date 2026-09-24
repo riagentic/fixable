@@ -64,7 +64,9 @@ export function gitCheck(p: GitPolicy): Check {
               const args = current === null
                 ? ["config", "--global", "--unset", p.key]
                 : ["config", "--global", p.key, current];
-              await run("git", args, 5_000);
+              const r = await run("git", args, 5_000);
+              // An Undo that silently did nothing would be recorded as undone.
+              if (!r.ok) throw new Error(`git ${args.join(" ")} failed`);
             },
           };
         },

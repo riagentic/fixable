@@ -139,43 +139,112 @@ const trimEnd = (s: string) => s.replace(/\s*$/, "");
 
 const SSH_BANNER = "# Added by Fixable — safe to remove.";
 
-/** Set an option inside a trailing `Host *` block in an ssh_config.
+/** Set an option for every host in an ssh_config, without overriding any
+ *  per-host setting.
  *
- *  ssh_config is FIRST-match-wins, so a keyword written at the top of the file
- *  would silently override every per-host setting below it. A `Host *` block at
- *  the END is the opposite and is the documented idiom: it applies only where
- *  nothing more specific already answered. */
+ *  ssh_config is FIRST-match-wins. So:
+ *
+ *   1. If the key is already set globally — above the first block, or inside
+ *      a `Host *` / `Match all` block — the first such line is the one ssh
+ *      uses, and it is edited in place. Precedence stays exactly as it was.
+ *   2. Otherwise it goes into a `Host *` block at the very END, the documented
+ *      idiom: it applies only where nothing more specific already answered.
+ *      An earlier `Host *` block is NOT reused — anything written there
+ *      would beat every per-host block that follows it. */
 export function upsertSshOption(
   text: string,
   key: string,
   value: string,
 ): string {
   const lines = text.split("\n");
-  const isHostStar = (l: string) => /^\s*Host\s+\*\s*$/i.test(l);
-  const isBlockStart = (l: string) => /^\s*(Host|Match)\s+/i.test(l);
+  const setting = `    ${key} ${value}`;
+  const isBlockStart = (l: string) => /^\s*(Host|Match)\s/i.test(l);
+  const isGlobalBlock = (l: string) =>
+    /^\s*Host\s+\*\s*$/i.test(l) || /^\s*Match\s+all\s*$/i.test(l);
 
-  let start = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (isHostStar(lines[i]!)) (start = i, i = -1);
-  }
-  if (start < 0) {
-    return `${trimEnd(text)}\n\n${SSH_BANNER}\nHost *\n    ${key} ${value}\n`;
-  }
-
-  let end = lines.length;
-  for (let j = start + 1; j < lines.length; j++) {
-    if (isBlockStart(lines[j]!)) (end = j, j = lines.length);
-  }
   const re = matcher("space", key);
-  for (let i = end - 1; i > start; i--) {
-    if (!COMMENT.test(lines[i]!) && re.test(lines[i]!)) {
-      lines[i] = `    ${key} ${value}`;
-      return lines.join("\n");
-    }
+  let global = true; // top of file: before any block
+  let last = -1; // start of the last block
+  let hit = -1;
+  lines.forEach((l, i) => {
+    if (isBlockStart(l)) (global = isGlobalBlock(l), last = i);
+    else if (hit < 0 && global && !COMMENT.test(l) && re.test(l)) hit = i;
+  });
+
+  if (hit >= 0) {
+    lines[hit] = lines[hit]!.match(/^\s*/)![0] + `${key} ${value}`;
+    return lines.join("\n");
   }
-  lines.splice(end, 0, `    ${key} ${value}`);
+  if (last < 0 || !isGlobalBlock(lines[last]!)) {
+    return `${trimEnd(text)}\n\n${SSH_BANNER}\nHost *\n${setting}\n`;
+  }
+  // Inside the trailing global block, after its last real line.
+  let end = lines.length;
+  while (end > last + 1 && (lines[end - 1] ?? "").trim() === "") end--;
+  lines.splice(end, 0, setting);
   return lines.join("\n");
 }
+
+/** The FIRST value of `key` — sshd's rule, the opposite of `readKey`'s.
+ *  `text` must already be flattened (includes spliced in, conditional blocks
+ *  removed); this only answers "which line does the daemon see first". */
+export function readFirstKey(
+  text: string,
+  fmt: ConfFormat,
+  key: string,
+): string | null {
+  const re = matcher(fmt, key);
+  for (const l of text.split("\n")) {
+    if (COMMENT.test(l)) continue;
+    const m = l.match(re);
+    if (m) return (m[2] ?? "").trim();
+  }
+  return null;
+}
+
+// ----------------------------------------------------------------- sudo
+
+/** The effective global value of one sudoers `Defaults` option: `true` for a
+ *  set flag, `false` for a negated one (`!use_pty`), the value for
+ *  `name=value`, or null when no plain `Defaults` line mentions it.
+ *
+ *  Parsed per entry, because substring matching lies three ways: a TAB after
+ *  `Defaults` is valid, `timestamp_timeout=50` contains `=5`, and `!use_pty`
+ *  contains `use_pty`. Later entries win, as in sudo. Scoped lines
+ *  (`Defaults:alice`, `Defaults@host`, …) are not global and are skipped. */
+export function sudoDefault(
+  text: string,
+  name: string,
+): string | boolean | null {
+  let out: string | boolean | null = null;
+  const joined = text.replace(/\\\n/g, " "); // backslash continuations
+  for (const l of joined.split("\n")) {
+    const m = l.match(/^\s*Defaults\s+(.*)$/);
+    if (!m) continue;
+    for (const entry of splitEntries(m[1]!)) {
+      const e = entry.match(/^(!*)\s*([A-Za-z_]+)\s*(?:[+-]?=\s*(.*))?$/);
+      if (!e || e[2] !== name) continue;
+      out = e[3] !== undefined
+        ? e[3].trim().replace(/^"(.*)"$/, "$1")
+        : e[1]!.length % 2 === 0;
+    }
+  }
+  return out;
+}
+
+/** Split a Defaults list on commas outside double quotes, up to a comment. */
+const splitEntries = (list: string): string[] => {
+  const out: string[] = [];
+  let cur = "", quoted = false;
+  for (const ch of list) {
+    if (ch === '"') quoted = !quoted;
+    if (!quoted && ch === "#") break;
+    if (!quoted && ch === ",") (out.push(cur.trim()), cur = "");
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
+};
 
 // --------------------------------------------------------------- mozilla
 

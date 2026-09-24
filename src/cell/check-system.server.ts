@@ -12,8 +12,9 @@ type Mount = { mount: string; usedPct: number; freeBytes: number };
 /** `df -P -k` — POSIX columns, KiB. Real devices only: tmpfs and squashfs
  *  mounts are full by design and reporting them is noise, not diagnosis. */
 async function mounts(): Promise<Mount[]> {
+  // df exits 1 when ANY mount fails to stat (a stale NFS share) yet still
+  // prints every other line — so the output is used whatever the exit code.
   const r = await run("df", ["-P", "-k"], 8_000);
-  if (!r.ok) return [];
   return r.out.split("\n").slice(1).flatMap((line) => {
     const f = line.split(/\s+/);
     if (f.length < 6 || !f[0]?.startsWith("/dev/")) return [];

@@ -344,7 +344,7 @@ const ROWS: Row[] = [
     28,
     "The kernel swaps eagerly",
     "pages are pushed to disk while memory is still free, which is felt as stutter when you return to an application",
-    "`vm.swappiness=10` in /etc/sysctl.d/99-local.conf. With zram, a higher value is correct — this row assumes disk swap.",
+    "`vm.swappiness=10` in /etc/sysctl.d/99-zz-local.conf. With zram, a higher value is correct — this row assumes disk swap.",
   ],
   [
     "cpu-idle-disabled",

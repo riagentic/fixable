@@ -1,12 +1,13 @@
 import { assertEquals } from "@std/assert";
 import { bootCells, testCell } from "aio/testing";
-import { issues, MONITOR_MS } from "../../cell/issues.ts";
-import { POSSIBLE_BY_TIER } from "../../cell/checks.server.ts";
+import { issues, MONITOR_MS } from "../../src/cell/issues.ts";
+import { POSSIBLE_BY_TIER } from "../../src/cell/checks.server.ts";
 
 testCell(issues, "a monitor pass fills in the denominator", async (t) => {
   t.init();
   await t.send.monitor();
-  await t.settle();
+  // Each pass re-arms the next one; testCell has no clock to fire it on.
+  t.expect.effects(["__schedule"]);
   // The denominator in "N of M" comes from the registry, not a hand-kept copy.
   t.expect.state(
     (s) =>
@@ -75,6 +76,7 @@ testCell(
     // to entry and the tick had moved the list underneath it.
     const scanning = t.send.scan();
     await t.send.monitor();
+    t.expect.effects(["__schedule"]);
     await scanning;
     await t.settle();
     t.expect.state((s) => s.error === null, "the two passes collided");
@@ -87,4 +89,12 @@ testCell(issues, "fix all with nothing fixable changes nothing", async (t) => {
   await t.send.fixAll();
   await t.settle();
   t.expect.state((s) => s.error === null && s.log.length === 0);
+});
+
+testCell(issues, "a second Fix all while one runs is ignored", async (t) => {
+  t.init({ fixingAll: true });
+  await t.send.fixAll();
+  // Still flagged: the call returned without starting a sweep of its own, and
+  // without clearing the flag the running one owns.
+  t.expect.state((s) => s.fixingAll === true && s.log.length === 0);
 });

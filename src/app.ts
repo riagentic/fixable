@@ -3,12 +3,17 @@
 import { issues } from "./cell/issues.ts";
 import { aio } from "aio";
 
+// aio-ok: one local user and one window, and the UI reads every key it is sent.
 await aio.run({
   // Pinned here rather than inferred: the id keys the data directory, and a
   // compiled binary cannot read deno.json to find it out.
   appId: "fixable",
 
   ui: { width: 1180, height: 820 },
+
+  // A window that can queue root fixes must not open a DevTools or TCP port
+  // because another app left AIO_CDP / AIO_PORT in the environment.
+  electron: { ignoreDebugEnv: true },
 
   onStart: () => {
     // The restored fix log outlived the undo handles that made its entries

@@ -1,8 +1,8 @@
 // The safety rule, as tests rather than as a promise.
 import { assertEquals, assertRejects } from "@std/assert";
-import { CHECKS, POSSIBLE, probe } from "../../cell/checks.server.ts";
-import { permCheck } from "../../cell/check-perms.server.ts";
-import { mode, octal, tighten } from "../../cell/sys.server.ts";
+import { CHECKS, POSSIBLE, probe } from "../../src/cell/checks.server.ts";
+import { permCheck } from "../../src/cell/check-perms.server.ts";
+import { mode, octal, tighten } from "../../src/cell/sys.server.ts";
 
 Deno.test("every check is addressable and explains itself", () => {
   const ids = CHECKS.map((c) => c.id);
@@ -107,7 +107,7 @@ Deno.test("a fix narrows, verifies, and undoes back to what it found", async () 
 });
 
 Deno.test("an unknown id is a loud error, never a silent no-op", async () => {
-  const { applyFix, undoFix } = await import("../../cell/checks.server.ts");
+  const { applyFix, undoFix } = await import("../../src/cell/checks.server.ts");
   await assertRejects(() => applyFix("nope"), Error, "unknown check");
   await assertRejects(() => undoFix("nope"), Error, "no recorded change");
 });
@@ -179,7 +179,7 @@ Deno.test("a setting the user chooses is never changed unasked", async () => {
     "idle-dim-ac",
     "d3-lid-inhibit",
   ];
-  const { CHECKS: ALL } = await import("../../cell/checks.server.ts");
+  const { CHECKS: ALL } = await import("../../src/cell/checks.server.ts");
   for (const id of CHOSEN) {
     const c = ALL.find((x) => x.id === id);
     assertEquals(Boolean(c), true, `${id}: row is gone — rename or removal?`);

@@ -111,7 +111,7 @@ export const FIREWALL_POLICIES: SysPolicy[] = [
   },
   {
     id: "fw-forwarding-on",
-    title: "Packet forwarding is enabled with no firewall in front of it",
+    title: "This machine routes packets between its networks",
     category: "security",
     severity: "major",
     weight: 80,
@@ -120,6 +120,6 @@ export const FIREWALL_POLICIES: SysPolicy[] = [
     detail:
       "the machine routes traffic between the networks it is attached to, which can bridge an untrusted one into a trusted one",
     how:
-      "If this is not deliberate (a VM host, a container bridge or a shared connection turns it on), set `net.ipv4.ip_forward=0` in /etc/sysctl.d/99-local.conf.",
+      "If this is not deliberate (a VM host, a container bridge or a shared connection turns it on), set `net.ipv4.ip_forward=0` in /etc/sysctl.d/99-zz-local.conf.",
   },
 ];

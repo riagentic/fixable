@@ -57,8 +57,8 @@ const DEFAULTS = allow(
   "sysctl-mmap-min-addr",
   "sysctl-userfaultfd",
   "sysctl-overcommit-memory",
-  "sysctl-route-localnet",
   "sysctl-proxy-arp",
+  "sysctl-kptr-restrict-strict",
   "sysctl-accept-local",
   "sysctl-bootp-relay",
   "sysctl-icmp-echo-all",
@@ -160,6 +160,31 @@ export const SYSCTL_ROOT_OPTIONAL: Record<string, string> = {
     "Optional — this one costs you something. A serial device that needs an " +
     "unusual line discipline loaded on demand stops working. That is rare, " +
     "and rare is not the same as nobody.",
+  "sysctl-suid-dumpable":
+    "Optional — 1 is the debugging setting, and nobody reaches it by " +
+    "accident: it is how you get a core file out of a setuid program you are " +
+    "working on. Putting back 2 sends those crashes to the root-owned " +
+    "handler instead, where you can no longer read them yourself.",
+  "sysctl-proxy-arp":
+    "Optional — this one costs you something. Proxy ARP is how some routed " +
+    "VPNs, routed libvirt networks and bridged lab setups make a host " +
+    "reachable; on a machine running one, turning it off makes that host " +
+    "vanish from the network with no error anywhere.",
+  "sysctl-kptr-restrict-strict":
+    "Optional — the JIT is the distribution's own setting, but a kernel " +
+    "that has it off was usually set that way on purpose, against JIT " +
+    "spraying. Turning it back on trades that for the interpreter's " +
+    "exposure and speed.",
+};
+
+/** Rows whose value no command can put back on a running kernel, so the usual
+ *  "set it yourself with `sysctl -w`" would hand over a command that fails.
+ *  Each names the remedy that does work. */
+export const SYSCTL_REBOOT_ONLY: Record<string, string> = {
+  "sysctl-modules-autoload":
+    "Find what sets it — `grep -rs modules_disabled /etc/sysctl.conf " +
+    "/etc/sysctl.d /usr/lib/sysctl.d /run/sysctl.d` — remove that line, and " +
+    "reboot.",
 };
 
 /** Kernel-parameter checks Fixable will write, as a root drop-in. */
@@ -229,7 +254,6 @@ export const SYSCTL_ROOT_DENIED: Record<string, string> = Object.fromEntries([
       "sysctl-perf-event",
       "sysctl-unprivileged-bpf",
       "sysctl-bpf-jit-harden",
-      "sysctl-kptr-restrict-strict",
       "sysctl-io-uring",
     ],
   ),
@@ -249,13 +273,28 @@ export const SYSCTL_ROOT_DENIED: Record<string, string> = Object.fromEntries([
       "take it back until the machine reboots, so the promise every other fix " +
       "here makes — press once to change it, press once to change it back — " +
       "would not hold.",
-    ["sysctl-kexec", "sysctl-modules-autoload"],
+    ["sysctl-kexec"],
+  ),
+  ...deny(
+    "This cannot be changed on a running kernel at all. Once module loading " +
+      "is switched off, the kernel refuses to switch it back on — not for " +
+      "root, not for this app — until the machine reboots.",
+    ["sysctl-modules-autoload"],
+  ),
+  ...deny(
+    "This would expose services bound only to 127.0.0.1 — and turning it " +
+      "off would break the software that turned it on. kube-proxy, k3s and " +
+      "Docker without its userland proxy set it so that NodePorts and " +
+      "published ports answer on localhost; switching it off makes those " +
+      "ports refuse connections with nothing to say why.",
+    ["sysctl-route-localnet"],
   ),
   ...deny(
     "This would let ordinary programs take the ports your own services " +
-      "listen on. Widening the ephemeral range down to 1024 means an outgoing " +
-      "connection can be handed 5432 or 6379 first, and the database that " +
-      "wanted it then cannot start — intermittently, and only sometimes.",
+      "listen on. A narrowed range is usually narrowed on purpose, to keep a " +
+      "block of ports free for services; moving its edge back means an " +
+      "outgoing connection can be handed one of them first, and the service " +
+      "that wanted it then cannot start — intermittently, and only sometimes.",
     ["sysctl-ip-local-port-range"],
   ),
   ...deny(

@@ -107,6 +107,9 @@ export type ConfPolicy = Head & {
   /** Invert the whole check: the key being SET is the problem, and the fix
    *  comments it out. For options that are only ever dangerous. */
   presentIsBad?: boolean;
+  /** The value is a comma list of flags that adds up across lines (gpg's
+   *  `*-options`): `safe` is one flag, present or appended. */
+  list?: boolean;
   /** Only look at all if this binary is on PATH — a gpg.conf policy has no
    *  business creating a file on a machine without gpg. */
   needs?: string;

@@ -8,7 +8,7 @@ export function Banner() {
   return (
     <>
       {issues.error && (
-        <div className="banner" t="error">
+        <div className="banner" t="error" role="alert">
           <span>{issues.error}</span>
           <div className="spacer" />
           <button
@@ -22,7 +22,7 @@ export function Banner() {
         </div>
       )}
       {failed.length > 0 && (
-        <div className="banner info" t="unmeasured">
+        <div className="banner info" t="unmeasured" role="status">
           {failed.length} check{failed.length === 1 ? "" : "s"}{" "}
           could not measure on this machine: {failed.join(", ")}
         </div>

@@ -153,12 +153,26 @@ export const VPN_POLICIES: SysPolicy[] = [
     category: "privacy",
     severity: "major",
     weight: 79,
-    source: { kind: "file", path: "/proc/sys/net/ipv6/conf/all/disable_ipv6" },
-    bad: "=0",
+    // Only a leak when all three hold: a tunnel is up, none of the tunnels
+    // has a global IPv6 address, and IPv6 still has a default route out of
+    // some other interface. No tunnel prints nothing, which is no finding.
+    source: {
+      kind: "cmd",
+      cmd: "sh",
+      args: [
+        "-c",
+        "v=$(ip -o link show up 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -E '^(tun|wg|nordlynx|proton|vpn)'); " +
+        '[ -n "$v" ] || exit 0; ' +
+        '[ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" = 0 ] || { echo sealed; exit 0; }; ' +
+        'for i in $v; do ip -6 -o addr show dev "$i" scope global | grep -q . && { echo sealed; exit 0; }; done; ' +
+        "ip -6 route show default | grep -q . && echo leak || echo sealed",
+      ],
+    },
+    bad: "~leak",
     detail:
       "a site reachable over IPv6 is reached outside the tunnel, revealing your real address — the classic leak that a VPN's own connection test does not catch",
     how:
-      "Check whether your VPN carries IPv6. If it does not, either disable IPv6 while connected (`sysctl net.ipv6.conf.all.disable_ipv6=1`) or use a client that blocks it for you. Do not disable IPv6 permanently without checking what on your network needs it.",
+      "Turn on your VPN client's IPv6 leak protection, or use a client that tunnels IPv6. Failing that, disable IPv6 while connected (`sudo sysctl net.ipv6.conf.all.disable_ipv6=1`) — not permanently, without checking what on your network needs it.",
   },
   {
     id: "vpn-wg-conf-perms",

@@ -1,11 +1,11 @@
 import { assertEquals } from "@std/assert";
-import type { Issue } from "../../type/issue.ts";
+import type { Issue } from "../../src/type/issue.ts";
 import {
   bySignificance,
   countBySeverity,
   fixable,
   ordered,
-} from "../../lib/severity.ts";
+} from "../../src/lib/severity.ts";
 
 const issue = (p: Partial<Issue> & Pick<Issue, "id">): Issue => ({
   title: p.id,

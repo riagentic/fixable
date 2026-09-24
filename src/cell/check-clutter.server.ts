@@ -21,12 +21,24 @@ const CACHE_SIZE: Check = {
     "you. Clear them from the applications that own them.",
   probe: async (): Promise<Finding | null> => {
     const dir = join(home(), ".cache");
+    // A non-zero exit only means some subdirectory was unreadable; the total
+    // printed is still a lower bound, which is what a threshold needs.
     const r = await run("du", ["-sx", "-B1", dir], 20_000);
     const size = Number(r.out.split(/\s+/)[0]);
-    if (!r.ok || !Number.isFinite(size) || size < 5 * 1024 ** 3) return null;
+    if (r.out === "" || !Number.isFinite(size) || size < 5 * 1024 ** 3) {
+      return null;
+    }
     return { detail: `${dir} holds ${bytes(size)}` };
   },
 };
+
+/** An entry the session will not start: `Hidden=true` is the spec's way,
+ *  `X-GNOME-Autostart-enabled=false` is how Cinnamon's and GNOME's Startup
+ *  Applications switch one off. Counting those would report entries the user
+ *  already disabled. */
+const disabled = (text: string): boolean =>
+  /^\s*Hidden\s*=\s*true\s*$/m.test(text) ||
+  /^\s*X-GNOME-Autostart-enabled\s*=\s*false\s*$/m.test(text);
 
 const AUTOSTART: Check = {
   id: "autostart-count",
@@ -47,7 +59,7 @@ const AUTOSTART: Check = {
       for await (const e of Deno.readDir(dir)) {
         if (!e.isFile || !e.name.endsWith(".desktop")) continue;
         const text = await Deno.readTextFile(join(dir, e.name));
-        if (!/^Hidden=true$/m.test(text)) n++;
+        if (!disabled(text)) n++;
       }
     } catch {
       return null;

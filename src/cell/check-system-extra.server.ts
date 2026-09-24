@@ -329,7 +329,9 @@ const mountCheck = (
   probe: async (): Promise<Finding | null> => {
     const mounts = await readText("/proc/mounts");
     if (mounts === null) return null;
-    const line = mounts.split("\n").find((l) => l.split(" ")[1] === point);
+    // Stacked mounts: the LAST entry for a point is the one on top, the one
+    // anything opening a path there actually reaches.
+    const line = mounts.split("\n").findLast((l) => l.split(" ")[1] === point);
     if (!line) return null; // not a separate mount here
     const opts = (line.split(" ")[3] ?? "").split(",");
     return opts.includes(option) ? null : { detail: why };

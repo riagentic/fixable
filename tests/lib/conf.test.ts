@@ -3,11 +3,14 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import {
   disableKey,
+  readFirstKey,
   readKey,
+  sudoDefault,
   upsertKey,
   upsertSshOption,
-} from "../../lib/conf.ts";
-import { restoreConf, writeConf } from "../../cell/conf.server.ts";
+} from "../../src/lib/conf.ts";
+import { restoreConf, writeConf } from "../../src/cell/conf.server.ts";
+import { readText } from "../../src/cell/sys.server.ts";
 
 Deno.test("reads a space-separated keyword, case-insensitively", () => {
   const text = "# a comment\nkeyid-format 0xlong\nno-comments\n";
@@ -105,14 +108,92 @@ Deno.test("re-writing an option replaces it inside the block", () => {
   assertEquals(two.split("ServerAliveInterval").length - 1, 1);
 });
 
-Deno.test("a Host * block followed by another block keeps its own lines", () => {
-  const text = "Host *\n    User me\n\nHost prod\n    User deploy\n";
+Deno.test("an earlier Host * block is not reused — it would beat later hosts", () => {
+  // First match wins: a line added to this `Host *` would override the
+  // `Host prod` block below it. A new trailing block is the only safe place.
+  const text = "Host *\n    User me\n\nHost prod\n    ForwardAgent yes\n";
   const next = upsertSshOption(text, "ForwardAgent", "no");
   const lines = next.split("\n");
-  const star = lines.indexOf("Host *");
   const prod = lines.indexOf("Host prod");
   const added = lines.findIndex((l) => l.includes("ForwardAgent no"));
-  assertEquals(added > star && added < prod, true, "landed in the wrong block");
+  assertEquals(added > prod, true, "landed above a per-host block");
+  assertEquals(lines.lastIndexOf("Host *") > prod, true, "no trailing block");
+  assertEquals(next.startsWith("Host *\n    User me\n"), true);
+});
+
+Deno.test("a trailing Match all block is reused", () => {
+  const text = "Host prod\n    User deploy\n\nMatch all\n    User me\n";
+  const next = upsertSshOption(text, "ForwardAgent", "no");
+  assertEquals(
+    next,
+    "Host prod\n    User deploy\n\nMatch all\n    User me\n    ForwardAgent no\n",
+  );
+});
+
+Deno.test("a key already set globally is edited where ssh reads it", () => {
+  // Top-of-file lines are global and come first; appending a later block
+  // would change nothing.
+  const top = "ForwardAgent yes\n\nHost prod\n    User deploy\n";
+  assertEquals(
+    upsertSshOption(top, "ForwardAgent", "no"),
+    "ForwardAgent no\n\nHost prod\n    User deploy\n",
+  );
+  // Same for an earlier `Host *` that already holds the key: its line is the
+  // effective one, and editing it in place keeps precedence as it was.
+  const star = "Host *\n    ForwardAgent yes\n\nHost prod\n    User x\n";
+  assertEquals(
+    upsertSshOption(star, "ForwardAgent", "no"),
+    "Host *\n    ForwardAgent no\n\nHost prod\n    User x\n",
+  );
+  // …but a per-host value is never the one edited.
+  const host = "Host prod\n    ForwardAgent yes\n";
+  const next = upsertSshOption(host, "ForwardAgent", "no");
+  assertEquals(next.includes("    ForwardAgent yes"), true);
+  assertEquals(next.trimEnd().endsWith("ForwardAgent no"), true);
+});
+
+// ------------------------------------------------------------ sshd / sudo
+
+Deno.test("readFirstKey takes the first value, as sshd does", () => {
+  const text =
+    "# PermitRootLogin yes\nPermitRootLogin no\npermitrootlogin yes\n";
+  assertEquals(readFirstKey(text, "space", "PermitRootLogin"), "no");
+  assertEquals(readFirstKey(text, "space", "X11Forwarding"), null);
+});
+
+Deno.test("sudoDefault parses entries instead of matching substrings", () => {
+  // A TAB separator is valid sudoers.
+  assertEquals(sudoDefault("Defaults\tuse_pty\n", "use_pty"), true);
+  // `!use_pty` negates; the later line wins.
+  assertEquals(
+    sudoDefault("Defaults use_pty\nDefaults !use_pty\n", "use_pty"),
+    false,
+  );
+  assertEquals(sudoDefault("Defaults !use_pty\n", "use_pty"), false);
+  // `=50` is not `=5`.
+  assertEquals(
+    sudoDefault(
+      "Defaults env_reset, timestamp_timeout=50\n",
+      "timestamp_timeout",
+    ),
+    "50",
+  );
+  assertEquals(
+    sudoDefault("Defaults env_reset,mail_badpass\n", "env_reset"),
+    true,
+  );
+  assertEquals(
+    sudoDefault('Defaults logfile="/var/log/sudo.log"\n', "logfile"),
+    "/var/log/sudo.log",
+  );
+  // Comments and scoped (non-global) Defaults do not count.
+  assertEquals(sudoDefault("# Defaults use_pty\n", "use_pty"), null);
+  assertEquals(sudoDefault("Defaults:alice use_pty\n", "use_pty"), null);
+  // Backslash continuation joins the next line.
+  assertEquals(
+    sudoDefault("Defaults env_reset,\\\n  use_pty\n", "use_pty"),
+    true,
+  );
 });
 
 // ------------------------------------------------------- undo after a batch
@@ -175,6 +256,66 @@ Deno.test("a file the fix created is removed again by undo", async () => {
     assertEquals(w.before, null, "file already existed");
     await restoreConf(w)();
     await assertRejects(() => Deno.stat(path));
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+// ------------------------------------------------------------ writeConf safety
+
+Deno.test("writeConf refuses a symlink and leaves it a symlink", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${dir}/real`, "audit=false\n");
+    await Deno.symlink(`${dir}/real`, `${dir}/link`);
+    await assertRejects(() => writeConf(`${dir}/link`, "audit=true\n"));
+    assertEquals((await Deno.lstat(`${dir}/link`)).isSymlink, true);
+    assertEquals(await Deno.readTextFile(`${dir}/real`), "audit=false\n");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("writeConf refuses a file that is not UTF-8, writing nothing", async () => {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/latin1.conf`;
+  const bytes = new Uint8Array([0x23, 0x20, 0xe9, 0x0a]); // "# é" in Latin-1
+  try {
+    await Deno.writeFile(path, bytes);
+    await assertRejects(() => writeConf(path, "x\n"));
+    assertEquals(await Deno.readFile(path), bytes);
+    assertEquals([...Deno.readDirSync(dir)].length, 1, "temp file left behind");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("writeConf keeps the mode, and a new file is 0600", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${dir}/a`, "x\n");
+    await Deno.chmod(`${dir}/a`, 0o640);
+    await writeConf(`${dir}/a`, "y\n");
+    assertEquals((await Deno.stat(`${dir}/a`)).mode! & 0o7777, 0o640);
+    await writeConf(`${dir}/b`, "y\n");
+    assertEquals((await Deno.stat(`${dir}/b`)).mode! & 0o7777, 0o600);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("an unreadable file is not treated as absent", async () => {
+  if (Deno.uid() === 0) return; // root reads everything
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/locked.conf`;
+  try {
+    await Deno.writeTextFile(path, "secret=1\n");
+    await Deno.chmod(path, 0o000);
+    await assertRejects(() => readText(path), Deno.errors.PermissionDenied);
+    await assertRejects(() => writeConf(path, "x\n"));
+    await Deno.chmod(path, 0o600);
+    assertEquals(await Deno.readTextFile(path), "secret=1\n");
+    assertEquals(await readText(`${dir}/missing`), null);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

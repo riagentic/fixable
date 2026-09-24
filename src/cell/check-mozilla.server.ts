@@ -13,7 +13,7 @@ import type { Check, Finding } from "../type/check.ts";
 import type { MozPolicy } from "../type/policy.ts";
 import { prefValue, readUserPref, upsertUserPref } from "../lib/conf.ts";
 import { isBad } from "../lib/verdict.ts";
-import { home, readText } from "./sys.server.ts";
+import { applyAll, home, readText } from "./sys.server.ts";
 import { restoreConf, writeConf } from "./conf.server.ts";
 import { FIREFOX_POLICIES } from "../lib/policy/firefox.ts";
 import { FIREFOX2_POLICIES } from "../lib/policy/firefox2.ts";
@@ -77,6 +77,19 @@ async function locked(dir: string): Promise<boolean> {
 const label = (p: MozPolicy) =>
   p.product === "firefox" ? "Firefox" : "Thunderbird";
 
+/** Asked again at the moment of writing, not trusted from the scan: the
+ *  program may have started since. */
+async function refuseIfRunning(p: MozPolicy, profs: Profile[]): Promise<void> {
+  for (const prof of profs) {
+    if (await locked(prof.dir)) {
+      throw new Error(
+        `${label(p)} is running — close it first, or the change will be ` +
+          `overwritten when it exits`,
+      );
+    }
+  }
+}
+
 export function mozCheck(p: MozPolicy): Check {
   return {
     id: p.id,
@@ -106,7 +119,12 @@ export function mozCheck(p: MozPolicy): Check {
         // what `fallback` records. Treating absence as "fine" would miss every
         // pref whose default is the problem.
         const literal = readUserPref(text, p.pref) ?? p.fallback;
-        if (isBad(p.bad, prefValue(literal))) offenders.push(prof);
+        const verdict = isBad(p.bad, prefValue(literal));
+        // A value we cannot judge is not a value we call fine.
+        if (verdict === null) {
+          throw new Error(`${p.pref}: cannot judge ${literal.slice(0, 60)}`);
+        }
+        if (verdict) offenders.push(prof);
       }
       if (offenders.length === 0) return null;
 
@@ -118,15 +136,12 @@ export function mozCheck(p: MozPolicy): Check {
       return {
         detail,
         apply: async () => {
-          if (running.length > 0) {
-            throw new Error(
-              `${label(p)} is running — close it and press Fix again, or the ` +
-                `change will be overwritten when it exits`,
-            );
-          }
-          const undone: (() => Promise<void>)[] = [];
-          for (const prof of offenders) {
-            const text = await readText(prof.prefs) ?? "";
+          await refuseIfRunning(p, offenders);
+          const revert = await applyAll(offenders, async (prof) => {
+            const text = await readText(prof.prefs);
+            // It was there a moment ago; creating a one-line prefs.js in its
+            // place is not the edit anyone reviewed.
+            if (text === null) throw new Error(`${prof.prefs} has vanished`);
             const was = readUserPref(text, p.pref) ?? p.fallback;
             const write = await writeConf(
               prof.prefs,
@@ -134,17 +149,20 @@ export function mozCheck(p: MozPolicy): Check {
             );
             // Dozens of prefs share one prefs.js, so undo one pref rather
             // than rewriting the file over the other fixes.
-            undone.push(restoreConf(
+            return restoreConf(
               write,
               (later) => upsertUserPref(later, p.pref, was),
-            ));
-          }
+            );
+          });
           return {
             summary: `${p.pref} -> ${p.safe} in ${offenders.length} ${
               label(p)
             } profile${offenders.length === 1 ? "" : "s"}`,
+            // Undo writes prefs.js too, so it is exactly as unsafe while the
+            // program runs: the restore would be overwritten at exit.
             revert: async () => {
-              for (const r of undone) await r();
+              await refuseIfRunning(p, offenders);
+              await revert();
             },
           };
         },

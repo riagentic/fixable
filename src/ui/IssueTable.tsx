@@ -2,13 +2,16 @@
 // (every write goes through `merge`, which sorts) and already filtered by the
 // view, so the table renders what it is given rather than deciding twice.
 import { issues } from "../cell/issues.ts";
-import type { Issue } from "../type/issue.ts";
+import type { Issue, View } from "../type/issue.ts";
 import { IssueRow } from "./IssueRow.tsx";
+import { AllClear } from "./Art.tsx";
 
 const COLUMNS = ["Issue", "Category", "Priority", "Fix", "What Fix does"];
 
-const EMPTY: Record<string, string> = {
+const EMPTY: Record<View, string> = {
   auto: "Nothing left to fix automatically.",
+  sudo: "Nothing needs the root password.",
+  optional: "No optional changes to consider.",
   manual: "Nothing here needs you to step in.",
   all: "All checks passed.",
 };
@@ -20,6 +23,7 @@ function Empty() {
   const hidden = issues.hidden();
   return (
     <div className="empty" t="empty">
+      {issues.lastScan ? <AllClear /> : ""}
       {issues.lastScan
         ? <strong>Nothing to fix</strong>
         : <strong>Ready</strong>}
@@ -33,6 +37,10 @@ function Empty() {
 
 export function IssueTable() {
   const rows = issues.shown();
+  // Read once here and handed down, so a fix starting or finishing re-renders
+  // this table once rather than every row reading the cell for itself.
+  const fixing = new Set(issues.fixing);
+  const locked = issues.scanning || issues.fixingAll || issues.rootFixing;
   return (
     <section className="panel" t="issues">
       {rows.length === 0 ? <Empty /> : (
@@ -41,7 +49,14 @@ export function IssueTable() {
             <tr>{COLUMNS.map((c) => <th key={c}>{c}</th>)}</tr>
           </thead>
           <tbody>
-            {rows.map((i: Issue) => <IssueRow key={i.id} issue={i} />)}
+            {rows.map((i: Issue) => (
+              <IssueRow
+                key={i.id}
+                issue={i}
+                fixing={fixing.has(i.id)}
+                locked={locked}
+              />
+            ))}
           </tbody>
         </table>
       )}

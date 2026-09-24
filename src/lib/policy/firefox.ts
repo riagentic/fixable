@@ -469,7 +469,6 @@ const SECURITY: Row[] = [
     "Global Privacy Control is not sent",
     "sites are not told you object to your data being sold",
     "A header is added. It is legally binding in several jurisdictions.",
-    "true",
   ),
   [
     "cert-pinning",
@@ -480,7 +479,7 @@ const SECURITY: Row[] = [
     75,
     "Certificate pinning is not fully enforced",
     "a certificate authority installed on this machine can impersonate pinned sites",
-    "Level 2 enforces pinning for everything, including certificates you installed yourself.",
+    "Level 2 enforces pinning even against a root you installed yourself — which is what corporate TLS inspection, antivirus web shields and debugging proxies such as mitmproxy rely on, so pinned sites stop loading behind any of them.",
   ],
 ];
 

@@ -1,11 +1,11 @@
 import { assertEquals } from "@std/assert";
-import type { FixRecord } from "../../type/issue.ts";
+import type { FixRecord } from "../../src/type/issue.ts";
 import {
   hasUndoable,
   markUndone,
   remember,
   retireUndos,
-} from "../../lib/log.ts";
+} from "../../src/lib/log.ts";
 
 const rec = (id: string, at: number, undoable = true): FixRecord => ({
   id,

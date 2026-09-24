@@ -16,6 +16,16 @@ const GO_W = 0o022; // group/other write
  *  still come out in a deliberate order rather than an accidental one. */
 const step = (top: number, i: number) => Math.max(1, top - i);
 
+/** "your AWS credentials" → "Your AWS credentials are". Plural by the head
+ *  noun: a trailing "(…)" or ", …" is a gloss, and a path, "the …", "a …" or
+ *  "which/what/how …" names one thing whatever it ends with. */
+const subject = (what: string): string => {
+  const head = what.replace(/\s*\(.*\)$|,.*$/, "");
+  const one = /^(~\/|the |an? |which |what |where |how |code )/.test(head) ||
+    !/s$/.test(head);
+  return `${what[0]!.toUpperCase()}${what.slice(1)} ${one ? "is" : "are"}`;
+};
+
 export const PERM_POLICIES: PermPolicy[] = [
   {
     id: "perm-home",
@@ -71,7 +81,7 @@ export const PERM_POLICIES: PermPolicy[] = [
 
   ...SECRET_FILES.map(([id, path, what, severity], i): PermPolicy => ({
     id: `perm-${id}`,
-    title: `${what} is readable by other accounts`,
+    title: `${subject(what)} readable by other accounts`,
     category: "security",
     severity,
     weight: step(70, i),
@@ -83,7 +93,7 @@ export const PERM_POLICIES: PermPolicy[] = [
 
   ...PRIVATE_DIRS.map(([id, path, what, severity], i): PermPolicy => ({
     id: `perm-${id}`,
-    title: `${what} is reachable by other accounts`,
+    title: `${subject(what)} reachable by other accounts`,
     category: "security",
     severity,
     weight: step(68, i),
@@ -95,7 +105,7 @@ export const PERM_POLICIES: PermPolicy[] = [
 
   ...HISTORY_FILES.map(([id, path, name], i): PermPolicy => ({
     id: `perm-${id}`,
-    title: `${name} is readable by other accounts`,
+    title: `${subject(name)} readable by other accounts`,
     category: "privacy",
     severity: "minor",
     weight: step(40, i),

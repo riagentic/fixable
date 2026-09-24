@@ -42,9 +42,15 @@ export function isBad(bad: Verdict, raw: string): boolean | null {
     return raw.toLowerCase().includes(bad.slice(1).toLowerCase());
   }
   const n = asInt(raw);
+  if (n === null) return null;
+  // `=a|b|c`: bad when the value is any of them.
+  if (bad[0] === "=") {
+    const any = bad.slice(1).split("|").map(Number);
+    return any.every(Number.isFinite) ? any.includes(n) : null;
+  }
   const limit = Number(bad.slice(1));
-  if (n === null || !Number.isFinite(limit)) return null;
-  return bad[0] === "=" ? n === limit : bad[0] === "<" ? n < limit : n > limit;
+  if (!Number.isFinite(limit)) return null;
+  return bad[0] === "<" ? n < limit : n > limit;
 }
 
 /** Would writing `safe` actually clear the `bad` clause?

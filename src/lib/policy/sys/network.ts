@@ -136,7 +136,7 @@ export const NETWORK_POLICIES: SysPolicy[] = [
     detail:
       "the outbound IPv6 address is derived from the hardware address, so every site you visit can follow this exact machine across networks",
     how:
-      "`net.ipv6.conf.all.use_tempaddr=2` and the same for `default` in /etc/sysctl.d/99-local.conf.",
+      "`net.ipv6.conf.all.use_tempaddr=2` and the same for `default` in /etc/sysctl.d/99-zz-local.conf.",
   },
   {
     id: "net-hostname-broadcast",
@@ -164,7 +164,7 @@ export const NETWORK_POLICIES: SysPolicy[] = [
     detail:
       "on links with any loss, BBR sustains noticeably higher throughput than the default",
     how:
-      "`net.ipv4.tcp_congestion_control=bbr` plus `net.core.default_qdisc=fq` in /etc/sysctl.d/99-local.conf.",
+      "`net.ipv4.tcp_congestion_control=bbr` plus `net.core.default_qdisc=fq` in /etc/sysctl.d/99-zz-local.conf.",
   },
   {
     id: "net-proxy-env",
