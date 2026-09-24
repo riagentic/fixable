@@ -22,7 +22,7 @@ import type {
   Undo,
 } from "../type/check.ts";
 import type { Issue, Remedy, Tier } from "../type/issue.ts";
-import { isOptionalTier, isRootTier, TIERS } from "../type/issue.ts";
+import { isRootTier, TIERS } from "../type/issue.ts";
 import { SYSTEM_CHECKS } from "./check-system.server.ts";
 import { DESKTOP_CHECKS } from "./check-desktop.server.ts";
 import { PERM_CHECKS } from "./check-perms.server.ts";
@@ -195,6 +195,18 @@ export const POSSIBLE_BY_TIER: Record<Tier, number> = Object.fromEntries(
 
 const byId = new Map(CHECKS.map((c) => [c.id, c]));
 
+/** One change to the machine at a time — fix, undo or root plan alike. Many
+ *  checks share a file (every Firefox pref lives in one prefs.js), and two
+ *  changes reading and rewriting it at once would each write back a copy
+ *  without the other's. The chain is the queue: each change starts when the
+ *  one before it has settled, whichever way it settled. */
+let tail: Promise<unknown> = Promise.resolve();
+const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
+  const run = tail.then(work, work);
+  tail = run.catch(() => {});
+  return run;
+};
+
 /** Revert handles from fixes applied this session. Server-side only: a closure
  *  cannot cross the wire, so the cell keeps the record and this keeps the act. */
 const undos = new Map<string, () => Promise<void>>();
@@ -203,7 +215,6 @@ const undos = new Map<string, () => Promise<void>>();
  *  putting one back means asking for the password again. */
 const rootUndos = new Map<string, RootChange[]>();
 
-/** What a finding is shaped like, independent of what its check claims. */
 /** What a finding is shaped like, independent of what its check claims. */
 const shapeOf = (
   f: NonNullable<Awaited<ReturnType<Check["probe"]>>>,
@@ -348,7 +359,11 @@ export type FixOutcome = {
 
 /** Apply one fix: re-probe, act, re-probe. Throws when the check is unknown or
  *  has no safe fix — a caller asking for one is a bug, not a user error. */
-export async function applyFix(id: string): Promise<FixOutcome> {
+export function applyFix(id: string): Promise<FixOutcome> {
+  return exclusive(() => applyFixNow(id));
+}
+
+async function applyFixNow(id: string): Promise<FixOutcome> {
   const check = byId.get(id);
   if (!check) throw new Error(`unknown check: ${id}`);
 
@@ -379,7 +394,11 @@ export async function applyFix(id: string): Promise<FixOutcome> {
 
 /** Put back what a fix replaced. Throws when nothing was recorded — silently
  *  doing nothing would let the UI claim an undo that never happened. */
-export async function undoFix(id: string): Promise<Issue | null> {
+export function undoFix(id: string): Promise<Issue | null> {
+  return exclusive(() => undoFixNow(id));
+}
+
+async function undoFixNow(id: string): Promise<Issue | null> {
   const back = rootUndos.get(id);
   if (back) {
     // Undoing a root change costs a password, the same as making one did.
@@ -479,7 +498,11 @@ export type RootOutcome = {
 };
 
 /** Run a confirmed plan. One password prompt for the whole batch. */
-export async function applyRootPlan(token: string): Promise<RootOutcome> {
+export function applyRootPlan(token: string): Promise<RootOutcome> {
+  return exclusive(() => applyRootPlanNow(token));
+}
+
+async function applyRootPlanNow(token: string): Promise<RootOutcome> {
   if (!pending || pending.token !== token) {
     throw new Error(
       "that plan is no longer current — build it again so it is checked " +
@@ -520,7 +543,11 @@ export async function applyRootPlan(token: string): Promise<RootOutcome> {
  *  what it is authorising, and one line of one file is not a batch anybody
  *  needs a summary of. Same shape as {@link applyFix} so the cell can treat
  *  the two the same way. */
-export async function applyRootFix(id: string): Promise<FixOutcome> {
+export function applyRootFix(id: string): Promise<FixOutcome> {
+  return exclusive(() => applyRootFixNow(id));
+}
+
+async function applyRootFixNow(id: string): Promise<FixOutcome> {
   const check = byId.get(id);
   if (!check) throw new Error(`unknown check: ${id}`);
   if (!isRootTier(check.tier)) throw new Error(`${id} is not a root fix`);

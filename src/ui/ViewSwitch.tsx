@@ -17,13 +17,14 @@ export function ViewSwitch() {
   // promise a number the list then fails to show.
   const count = (v: View) => visible(v, found).length;
   return (
-    <div className="switch" t="view">
+    <div className="switch" t="view" role="group" aria-label="Show">
       {VIEWS.map((v: View) => (
         <button
           key={v}
           type="button"
           t={`view-${v}`}
           title={VIEW_MEANING[v]}
+          aria-pressed={v === current}
           className={`seg${v === current ? " on" : ""}`}
           onClick={() => issues.setView(v)}
         >

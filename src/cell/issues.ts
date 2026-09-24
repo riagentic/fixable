@@ -35,7 +35,8 @@ export type RootPlan = {
 
 type IssuesState = {
   issues: Issue[];
-  /** Which issues the list shows. A preference, so it persists. */
+  /** Which issues the list shows. Not persisted: the app always opens on
+   *  Auto, the set you can act on without being asked for anything. */
   view: View;
   /** How many checks of each tier exist — the denominators behind "7 of 61",
    *  one per view. Filled in by the first pass, from the registry. */
@@ -49,6 +50,9 @@ type IssuesState = {
   scanning: boolean;
   /** Ids with a fix in flight, so each row can show its own progress. */
   fixing: string[];
+  /** True for the whole of a "Fix all" — between two of its fixes `fixing`
+   *  is empty, and a second press in that gap would start a second sweep. */
+  fixingAll: boolean;
   /** When the always-on checks last measured. Visible, because "monitoring"
    *  that silently stopped ticking looks exactly like a healthy machine. */
   lastMeasure: number | null;
@@ -78,7 +82,7 @@ export const issues = cell("issues", {
   // Measurements are live: a verdict from the last boot is a claim about a
   // machine that has since changed. The fix log is the exception — it records
   // what this app did to the user's computer and must survive a restart.
-  persist: { include: ["log", "view"] },
+  persist: { include: ["log"] },
 
   // A full scan runs subprocesses and walks the home directory; it can be
   // superseded or stopped mid-flight. Under a transaction, a cancelled call's
@@ -89,12 +93,14 @@ export const issues = cell("issues", {
   // Re-scanning supersedes the scan still running; "Stop" cancels it.
   cancelOn: { scan: ["self", "issues:stop"] },
 
-  // A full scan shells out to `apt-get -s upgrade` and walks the home
-  // directory — minutes on a large machine, well past the framework's default
-  // call ceiling. Declared here rather than as a `perfBudget` string in
-  // app.ts: this list is checked against the method names at cell() time, so
-  // renaming `scan` fails loudly instead of silently orphaning the exemption.
-  long: ["scan"],
+  // Past the framework's 30-second call ceiling, all of them: a full scan
+  // shells out to `apt-get -s upgrade` and walks the home directory; a root
+  // fix, a root undo and a root plan wait on a person typing a password; a
+  // plan re-probes every root check; "Fix all" is dozens of fixes in a row.
+  // Declared here rather than as a `perfBudget` string in app.ts: this list
+  // is checked against the method names at cell() time, so a rename fails
+  // loudly instead of silently orphaning the exemption.
+  long: ["scan", "fix", "fixAll", "planRootFixes", "runRootFixes", "undo"],
 
   state: {
     issues: [] as Issue[],
@@ -108,6 +114,7 @@ export const issues = cell("issues", {
     rootFixing: false,
     scanning: false,
     fixing: [] as string[],
+    fixingAll: false,
     lastMeasure: null as number | null,
     lastScan: null as number | null,
     failed: [] as string[],
@@ -152,16 +159,24 @@ export const issues = cell("issues", {
       s.error = null;
       s.$commit!(); // publish the spinner now, mid-transaction
 
-      const res = await mod.probe("all", s.$signal!);
-      if (s.$signal!.aborted) return;
+      try {
+        const res = await mod.probe("all", s.$signal!);
+        if (s.$signal!.aborted) return;
 
-      // Same rule as the monitor pass, for the same reason — a monitor tick
-      // fires every 30 seconds and a full sweep takes longer than that.
-      const live = s.$live!;
-      s.issues = merge(live.issues, res.ran, res.issues);
-      s.failed = mergeIds(live.failed, res.ran, res.failed);
-      s.lastScan = s.lastMeasure = Date.now();
-      s.scanning = false;
+        // Same rule as the monitor pass, for the same reason — a monitor tick
+        // fires every 30 seconds and a full sweep takes longer than that.
+        const live = s.$live!;
+        s.issues = merge(live.issues, res.ran, res.issues);
+        s.failed = mergeIds(live.failed, res.ran, res.failed);
+        s.lastScan = s.lastMeasure = Date.now();
+      } catch (e) {
+        // A sweep that died is said out loud, and never leaves a spinner
+        // turning over a list that stopped updating.
+        s.$live!.error = e instanceof Error ? e.message : String(e);
+      } finally {
+        // A superseded scan leaves the flag to the one that replaced it.
+        if (!s.$signal!.aborted) s.$live!.scanning = false;
+      }
     },
 
     /** Stop button. `cancelOn` does the aborting; clearing the flag here makes
@@ -216,7 +231,14 @@ export const issues = cell("issues", {
      *  kind, and `fixable` matches only `fix`. That is the whole mechanism
      *  behind "a preference is never changed unless you ask for it". */
     async fixAll(s: S) {
-      for (const i of fixable(s.issues)) await issues.fix(i.id);
+      if (s.fixingAll) return;
+      s.fixingAll = true;
+      s.$commit!();
+      try {
+        for (const i of fixable(s.$live!.issues)) await issues.fix(i.id);
+      } finally {
+        s.$live!.fixingAll = false;
+      }
     },
 
     /** Work out what the root fixes would do, and show it.
@@ -339,14 +361,21 @@ export const issues = cell("issues", {
   selectors: {
     /** The rows the table draws — filtered, already ordered by the merge. */
     shown: (s: IssuesState) => visible(s.view, s.issues),
-    /** Severity tallies over what is on screen, never over what is hidden. */
-    counts: (s: IssuesState) => countBySeverity(visible(s.view, s.issues)),
-    /** The denominator that matches the current view. */
-    possibleShown: (s: IssuesState) => possibleIn(s.view, s.possible),
+    /** Severity tallies over everything found. The header speaks for the
+     *  machine, not for the view: a critical finding with no button must not
+     *  vanish from the summary because the list opened on Auto. */
+    counts: (s: IssuesState) => countBySeverity(s.issues),
+    /** Every check in the catalogue — the header's denominator. */
+    possibleAll: (s: IssuesState) => possibleIn("all", s.possible),
     /** What "Fix all" would act on — never limited by the view. */
     fixableCount: (s: IssuesState) => fixable(s.issues).length,
     /** What "Fix all (sudo required)" would act on. */
     rootCount: (s: IssuesState) => rootFixable(s.issues).length,
+    /** Any fix, sweep or root plan in flight — every button that changes the
+     *  machine waits for it, and so does Scan, whose reading would otherwise
+     *  land on top of a fix made while it ran. */
+    busy: (s: IssuesState) =>
+      s.scanning || s.fixingAll || s.rootFixing || s.fixing.length > 0,
     /** How many issues the other views are hiding right now. */
     hidden: (s: IssuesState) =>
       s.issues.length - visible(s.view, s.issues).length,

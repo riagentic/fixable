@@ -12,7 +12,7 @@ import { SSH_POLICIES } from "../lib/policy/ssh.ts";
 import { upsertSshOption } from "../lib/conf.ts";
 import { isBad } from "../lib/verdict.ts";
 import { has, home, readText, run } from "./sys.server.ts";
-import { restoreConf, writeConf } from "./conf.server.ts";
+import { isSymlink, restoreConf, writeConf } from "./conf.server.ts";
 import { join } from "@std/path";
 
 /** A name that resolves to nothing and matches no sensible `Host` block, so
@@ -62,6 +62,12 @@ export function sshCheck(p: SshPolicy): Check {
 
       const detail = `${p.detail} (${p.key} = ${raw})`;
       if (!auto) return { detail };
+      // A linked config is reported without a button — see writeConf.
+      if (await isSymlink(join(home(), ".ssh", "config"))) {
+        return {
+          detail: `${detail} — ~/.ssh/config is a symlink; edit it by hand`,
+        };
+      }
 
       return {
         detail,

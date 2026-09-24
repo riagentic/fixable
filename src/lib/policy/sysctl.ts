@@ -4,6 +4,8 @@
 // for an app running as your user.
 import type { SysctlPolicy } from "../../type/policy.ts";
 
+/** Most rows here are security; a ceiling, a buffer or a timer is not, and is
+ *  filed where its failure shows up — as instability or as slowness. */
 const row = (
   id: string,
   key: string,
@@ -13,10 +15,11 @@ const row = (
   weight: number,
   title: string,
   detail: string,
+  category: SysctlPolicy["category"] = "security",
 ): SysctlPolicy => ({
   id: `sysctl-${id}`,
   title,
-  category: "security",
+  category,
   severity,
   weight,
   key,
@@ -119,11 +122,13 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
   row(
     "protected-fifos",
     "fs.protected_fifos",
-    "2",
-    "<2",
+    // 1 is what systemd ships; 2 also refuses group-writable directories and
+    // is a choice, not a repair.
+    "1",
+    "<1",
     "minor",
     50,
-    "FIFO protection is not fully on",
+    "FIFO protection is off",
     "a FIFO planted in a shared directory can be opened by a victim program",
   ),
   row(
@@ -139,12 +144,14 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
   row(
     "suid-dumpable",
     "fs.suid_dumpable",
-    "0",
-    ">0",
+    // 2 ("suidsafe") is what systemd-coredump and apport ship: a privileged
+    // crash goes to a root-owned handler. Only 1 hands it to the user.
+    "2",
+    "=1",
     "major",
     60,
-    "Privileged programs may write core dumps",
-    "a crash can leave secrets from a privileged process on disk",
+    "Privileged programs dump core as the user who ran them",
+    "a crashing setuid program writes its memory — secrets included — to a file the ordinary user can read",
   ),
   row(
     "rp-filter",
@@ -405,6 +412,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     67,
     "IPv6 privacy extensions are not preferred",
     "your outbound IPv6 address is derived from your MAC, so every site you visit can follow this exact machine across networks",
+    "privacy",
   ),
   row(
     "tempaddr-default",
@@ -415,6 +423,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     66,
     "New interfaces do not prefer IPv6 privacy addresses",
     "the same MAC-derived tracking, on any network you join later",
+    "privacy",
   ),
   row(
     "kexec",
@@ -475,6 +484,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     59,
     "The file-watch limit is low enough to break editors and build tools",
     "watchers fail with ENOSPC once a project is large, and the tool usually reports it as something else entirely",
+    "stability",
   ),
   row(
     "inotify-instances",
@@ -485,6 +495,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     45,
     "The file-watcher limit is low",
     "several editors and sync tools open one instance each and then stop working",
+    "stability",
   ),
   row(
     "qdisc",
@@ -495,6 +506,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     31,
     "The network queue has no bufferbloat control",
     "a large upload makes every other connection on the machine feel broken",
+    "performance",
   ),
   row(
     "swappiness",
@@ -505,6 +517,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     32,
     "The kernel swaps eagerly",
     "pages are pushed to disk while memory is still free, which is felt as stutter",
+    "performance",
   ),
   row(
     "max-map-count",
@@ -515,6 +528,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     30,
     "The memory-map limit is low",
     "games, JVMs and some databases fail with an allocation error that names nothing useful",
+    "stability",
   ),
   row(
     "tcp-timestamps",
@@ -525,6 +539,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     24,
     "TCP timestamps reveal this machine's uptime",
     "a passive observer can tell how long the machine has been running, and correlate it across networks",
+    "privacy",
   ),
   row(
     "icmp-ratelimit",
@@ -555,6 +570,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     22,
     "The half-open connection queue is small",
     "a modest burst of connections is enough to start dropping them",
+    "performance",
   ),
   row(
     "somaxconn",
@@ -565,6 +581,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     21,
     "The listen backlog is small",
     "a server on this machine drops connections under a burst it could have held",
+    "performance",
   ),
   row(
     "netdev-backlog",
@@ -575,6 +592,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     20,
     "The device receive queue is small",
     "packets are dropped at the interface under load rather than being processed",
+    "performance",
   ),
   row(
     "tcp-fastopen",
@@ -585,6 +603,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     19,
     "TCP Fast Open is not fully enabled",
     "every connection pays an extra round-trip it could have skipped",
+    "performance",
   ),
   row(
     "tcp-mtu-probing",
@@ -595,6 +614,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     18,
     "Path MTU black holes are not worked around",
     "some connections hang instead of falling back, which reads as a broken site",
+    "stability",
   ),
   row(
     "tcp-slow-start",
@@ -605,6 +625,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     17,
     "Idle connections restart from a cold window",
     "a resumed connection is slow for no reason on a good link",
+    "performance",
   ),
   row(
     "dirty-ratio",
@@ -615,6 +636,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     16,
     "A large amount of writing is buffered before it reaches disk",
     "a big write stalls everything else when the kernel finally flushes it",
+    "performance",
   ),
   row(
     "dirty-bg-ratio",
@@ -625,6 +647,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     15,
     "Background writeback starts late",
     "writes pile up and then land in one burst",
+    "performance",
   ),
   row(
     "vfs-cache-pressure",
@@ -635,6 +658,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     14,
     "Directory and inode caches are dropped aggressively",
     "file operations re-read metadata the kernel had already cached",
+    "performance",
   ),
   row(
     "min-free-kbytes",
@@ -645,6 +669,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     13,
     "The kernel keeps almost no free memory in reserve",
     "allocation under pressure fails rather than waiting",
+    "stability",
   ),
   row(
     "panic-on-oops",
@@ -655,6 +680,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     11,
     "The kernel continues after an internal error",
     "a machine running on after an oops produces corrupt results rather than a clean restart",
+    "stability",
   ),
   row(
     "nmi-watchdog",
@@ -665,6 +691,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     10,
     "The hard-lockup detector is off",
     "a wedged CPU is never noticed or reported",
+    "stability",
   ),
   row(
     "pid-max",
@@ -675,6 +702,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     9,
     "The process id space is small",
     "a busy build can exhaust process ids",
+    "stability",
   ),
   row(
     "file-max",
@@ -685,6 +713,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     26,
     "The system-wide open-file limit is low",
     "editors, browsers and language servers run out of file descriptors together",
+    "stability",
   ),
   row(
     "aio-max",
@@ -695,6 +724,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     8,
     "The asynchronous IO limit is low",
     "databases and virtual machines fail to start with a limit error",
+    "stability",
   ),
   row(
     "printk-console",
@@ -705,6 +735,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     7,
     "Kernel messages are printed to the console",
     "log spam over the top of whatever is on screen",
+    "settings",
   ),
   row(
     "bpf-jit-harden",
@@ -795,6 +826,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     13,
     "Connection attempts give up quickly",
     "a brief network hiccup becomes a failed connection",
+    "stability",
   ),
   row(
     "tcp-keepalive-time",
@@ -805,6 +837,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     14,
     "Dead connections are detected only after hours",
     "a dropped link leaves sockets hanging for two hours",
+    "stability",
   ),
   row(
     "tcp-fin-timeout",
@@ -815,6 +848,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     12,
     "Closing sockets are held for a long time",
     "connection slots stay occupied after the peer has gone",
+    "resource",
   ),
   row(
     "tcp-tw-reuse",
@@ -825,6 +859,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     11,
     "Closing sockets cannot be reused",
     "a machine that opens many short connections runs out of ports",
+    "stability",
   ),
   row(
     "rmem-max",
@@ -835,6 +870,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     16,
     "The receive buffer ceiling is small",
     "high-bandwidth transfers cannot open their window fully",
+    "performance",
   ),
   row(
     "wmem-max",
@@ -845,6 +881,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     15,
     "The send buffer ceiling is small",
     "uploads plateau below the link speed",
+    "performance",
   ),
   row(
     "udp-rmem-min",
@@ -855,6 +892,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     9,
     "The UDP receive floor is small",
     "bursty UDP traffic is dropped before it is read",
+    "performance",
   ),
   row(
     "netfilter-conntrack-max",
@@ -865,6 +903,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     17,
     "The connection tracking table is small",
     "under load the firewall starts dropping new connections and logs a table-full message",
+    "stability",
   ),
   row(
     "core-uses-pid",
@@ -875,6 +914,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     8,
     "Core dumps overwrite each other",
     "the second crash destroys the evidence from the first",
+    "stability",
   ),
   row(
     "panic-timeout",
@@ -885,6 +925,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     19,
     "The machine hangs forever after a kernel panic",
     "an unattended machine stays down until somebody notices",
+    "stability",
   ),
   row(
     "modules-autoload",
@@ -893,8 +934,9 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     "=1",
     "minor",
     7,
-    "Module loading is permanently disabled",
-    "reported so an unexpected lockdown is visible — it also blocks legitimate drivers",
+    "Module loading is disabled until the next reboot",
+    "a new device, filesystem or VPN that needs a driver cannot get one — and the kernel refuses to switch this back off without a reboot",
+    "stability",
   ),
   row(
     "overcommit-memory",
@@ -905,6 +947,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     18,
     "Memory overcommit is disabled",
     "large allocations fail even when the memory would never be touched",
+    "stability",
   ),
   row(
     "watermark-scale",
@@ -915,6 +958,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     10,
     "Reclaim starts too late under memory pressure",
     "the machine stalls rather than reclaiming gradually",
+    "stability",
   ),
   row(
     "compaction-proactive",
@@ -925,6 +969,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     6,
     "Memory compaction runs aggressively",
     "background compaction competes with your work for CPU",
+    "performance",
   ),
   row(
     "page-cluster",
@@ -935,6 +980,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     5,
     "Swap reads pull in large clusters",
     "on zram this wastes decompression work on pages nothing asked for",
+    "performance",
   ),
   row(
     "max-user-namespaces",
@@ -955,6 +1001,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     4,
     "The machine ignores all pings",
     "reported so a machine that appears offline to your own monitoring is explained",
+    "settings",
   ),
   row(
     "tcp-abort-overflow",
@@ -965,16 +1012,20 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     5,
     "Connections are reset when the accept queue is full",
     "clients see a reset instead of a retry, which reads as an application error",
+    "stability",
   ),
   row(
     "ip-local-port-range",
     "net.ipv4.ip_local_port_range",
-    "1024 65535",
-    "~32768 60999",
+    // The low edge is the first number read; raising it above the kernel's
+    // own 32768 is what narrows the range.
+    "32768 60999",
+    ">32768",
     "minor",
     6,
-    "The ephemeral port range is narrow",
-    "a machine opening many connections runs out of source ports",
+    "The ephemeral port range has been narrowed",
+    "a machine opening many connections runs out of source ports sooner",
+    "stability",
   ),
   row(
     "tcp-orphan-retries",
@@ -985,6 +1036,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     3,
     "Orphaned sockets are retried for a long time",
     "closed connections hold kernel memory longer than they need to",
+    "resource",
   ),
   row(
     "neigh-gc-thresh",
@@ -995,6 +1047,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     7,
     "The neighbour table is small",
     "on a large network the machine starts dropping ARP entries and connections stall",
+    "stability",
   ),
   row(
     "nf-conntrack-timeout",
@@ -1005,6 +1058,7 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     2,
     "Connection tracking entries are held for days",
     "the table fills with connections that ended long ago",
+    "resource",
   ),
   row(
     "ipv6-autoconf",
@@ -1027,13 +1081,18 @@ export const SYSCTL_POLICIES: SysctlPolicy[] = [
     "it announces its presence when joining a network",
   ),
   row(
+    // The id predates the row's real subject and is kept because ids key the
+    // fix log and root-safe.ts; what it checks is `bpf_jit_enable`. It asks
+    // about 0, not 1: distribution kernels build the JIT always-on, and on a
+    // kernel that does not, 0 is the interpreter — the Spectre v2 gadget the
+    // always-on build exists to remove.
     "kptr-restrict-strict",
     "net.core.bpf_jit_enable",
-    "0",
-    "=1",
+    "1",
+    "=0",
     "minor",
     10,
-    "The BPF just-in-time compiler is enabled",
-    "JIT-sprayed code is a known route to kernel execution; disabling it costs packet-filter performance",
+    "BPF programs run in the interpreter instead of the JIT",
+    "the in-kernel interpreter is a known Spectre gadget, and packet filters and tracers run markedly slower on it",
   ),
 ];

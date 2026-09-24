@@ -1,7 +1,7 @@
 // The privilege boundary. These are the tests that decide whether "no fix can
 // harm this machine" is a claim or a property.
 import { assertEquals, assertThrows } from "@std/assert";
-import type { RootOp } from "../../type/check.ts";
+import type { RootOp } from "../../src/type/check.ts";
 import {
   buildScript,
   commandLines,
@@ -11,8 +11,8 @@ import {
   parseResult,
   rootOpIsSafe,
   shq,
-} from "../../lib/root.ts";
-import { parseDropIn, renderDropIn, withBlock } from "../../lib/dropin.ts";
+} from "../../src/lib/root.ts";
+import { parseDropIn, renderDropIn, withBlock } from "../../src/lib/dropin.ts";
 
 // ------------------------------------------------------------ chmod narrows
 
@@ -111,7 +111,7 @@ Deno.test("a sysctl op can name nothing outside /proc/sys", () => {
   for (
     const key of [
       "kernel.dmesg_restrict; rm -rf /",
-      "../../etc/passwd",
+      "../../src/etc/passwd",
       "kernel.$(id)",
       "",
     ]
@@ -184,11 +184,14 @@ Deno.test("the script really writes what it says, and reports each step", async 
     const target = `${dir}/99-fixable.conf`;
     const script = buildScript(SCRIPT_OPS)
       .replaceAll("/etc/sysctl.d/99-fixable.conf", target);
-    const path = `${dir}/plan.sh`;
-    await Deno.writeTextFile(path, script);
-
-    const out = await new Deno.Command("sh", { args: [path], stdout: "piped" })
-      .output();
+    // Fed on stdin, exactly as root.server.ts hands it to the root shell —
+    // the heredoc has to survive being read from a pipe.
+    const sh = new Deno.Command("sh", { stdin: "piped", stdout: "piped" })
+      .spawn();
+    const writer = sh.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(script));
+    await writer.close();
+    const out = await sh.output();
     const { steps, finished } = parseResult(
       new TextDecoder().decode(out.stdout),
     );

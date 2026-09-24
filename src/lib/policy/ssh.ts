@@ -47,7 +47,7 @@ const AUTO: Row[] = [
     86,
     "Forwarded X11 clients are treated as trusted",
     "the X security extension is bypassed, so a forwarded app has full access to your display",
-    "Untrusted forwarding still works; it is just sandboxed.",
+    "Untrusted forwarding still connects, but inside the X security extension, where many real programs fail — clipboard, OpenGL and input tools included. Debian and Ubuntu ship `yes` for that reason.",
   ],
   [
     "permit-local-command",
@@ -91,7 +91,7 @@ const AUTO: Row[] = [
     53,
     "Kerberos authentication is attempted on every connection",
     "a needless round-trip that announces your principal to servers that never asked",
-    "Only relevant on a Kerberos realm; turn it back on per-host there.",
+    "Only relevant on a Kerberos realm — and there, turning it off globally breaks single sign-on to every host until it is turned back on per-host.",
   ],
   [
     "gssapi-delegate",
@@ -106,8 +106,9 @@ const AUTO: Row[] = [
   ],
   [
     "strict-host-key",
+    // `ssh -G` prints the canonical spelling, and for `no` that is `false`.
     "StrictHostKeyChecking",
-    "~no",
+    "~false",
     "ask",
     "critical",
     95,
@@ -161,8 +162,11 @@ const AUTO: Row[] = [
   ],
   [
     "tunnel-off",
+    // `ssh -G` prints `false` when off, and `true`, `point-to-point` or
+    // `ethernet` when on — every one of which contains a "t", and `false`
+    // does not. A substring is the only clause that matches all three.
     "Tunnel",
-    "~yes",
+    "~t",
     "no",
     "major",
     79,

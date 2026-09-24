@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { testUI } from "aio/testing";
-import App from "../../App.tsx";
-import { issues } from "../../cell/issues.ts";
+import App from "../../src/App.tsx";
+import { issues } from "../../src/cell/issues.ts";
 
 testUI(
   App,
@@ -67,11 +67,19 @@ testUI(App, "the switch moves between every tier", async (ui) => {
     true,
     "Auto showed an issue with no Fix button",
   );
-  // The header always counts what is on screen, never what is hidden.
+  // The header speaks for the whole machine, whatever the view: a finding
+  // with no button must not drop out of the summary because the list opened
+  // on Auto.
   assertEquals(
-    ui.score.text.startsWith(`${issues.shown().length} of`),
+    ui.score.text.startsWith(`${found} of`),
     true,
     `auto: ${ui.score.text}`,
+  );
+  const critical = issues.issues.filter((i) => i.severity === "critical");
+  assertEquals(
+    ui["tally-critical"].text.startsWith(`${critical.length} `),
+    true,
+    `auto: ${ui["tally-critical"].text}`,
   );
 });
 
@@ -81,7 +89,7 @@ testUI(App, "every visible row carries all five columns", async (ui) => {
   await ui.settle();
 
   for (const issue of issues.shown()) {
-    const text = ui.find("IssueRow", issue.id).text;
+    const text = ui[`row-${issue.id}`].text;
     assertEquals(text.includes(issue.title), true, `${issue.id}: no title`);
     assertEquals(
       text.includes(issue.category),

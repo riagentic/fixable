@@ -19,26 +19,34 @@ const LABEL = {
   optional: "Apply",
 } as const;
 
-function Action({ issue }: { issue: Issue }) {
+/** `fixing`: this row's fix is in flight. `locked`: something else that
+ *  changes the machine is — a scan, a sweep or a root plan — and a second
+ *  change landing under it would be measured against the wrong machine. Both
+ *  come from the table, so a row reads no cell state and re-renders only when
+ *  its own props change. */
+type RowProps = { issue: Issue; fixing: boolean; locked: boolean };
+
+function Action({ issue, fixing, locked }: RowProps) {
   const kind = issue.remedy.kind;
   if (kind === "advisory") {
     return <span className="none" t={`no-fix-${issue.id}`}>—</span>;
   }
-  const busy = issues.fixing.includes(issue.id);
   return (
     <button
       type="button"
       t={`fix-${issue.id}`}
+      aria-label={`${LABEL[kind]}: ${issue.title}`}
       className={`btn small act-${kind}`}
-      disabled={busy}
+      disabled={fixing || locked}
       onClick={() => issues.fix(issue.id)}
     >
-      {busy ? "Fixing…" : LABEL[kind]}
+      {fixing ? "Fixing…" : LABEL[kind]}
     </button>
   );
 }
 
-export function IssueRow({ issue }: { issue: Issue }) {
+export function IssueRow(props: RowProps) {
+  const { issue } = props;
   return (
     <tr t={`row-${issue.id}`}>
       <td>
@@ -60,7 +68,7 @@ export function IssueRow({ issue }: { issue: Issue }) {
         </span>
       </td>
       <td className="col-act">
-        <Action issue={issue} />
+        <Action {...props} />
       </td>
       <td className="explain">
         {issue.remedy.explanation}

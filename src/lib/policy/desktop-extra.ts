@@ -7,6 +7,16 @@ const GREETER = ["x.dm.slick-greeter"] as const;
 const WARP = ["org.x.warpinator.preferences"] as const;
 const MUFFIN = ["org.cinnamon.muffin", "org.gnome.mutter"] as const;
 
+/** The greeter runs as the display manager's own account and reads its own
+ *  settings, so writing yours would change nothing it shows — and the value
+ *  read here is only your account's copy. The real switch is a root-owned
+ *  file, which is why these report rather than write. */
+const GREETER_ADVICE = (key: string) =>
+  "No automatic fix. The login screen does not read your settings — it runs " +
+  "as the display manager's own account — so changing your copy here would " +
+  `do nothing. Set \`${key}=false\` under \`[Greeter]\` in ` +
+  "/etc/lightdm/slick-greeter.conf (as root) to change what it shows.";
+
 export const DESKTOP_EXTRA_POLICIES: SettingPolicy[] = [
   {
     id: "greeter-hostname",
@@ -20,6 +30,7 @@ export const DESKTOP_EXTRA_POLICIES: SettingPolicy[] = [
     safe: "false",
     detail: "anyone who walks past the locked machine learns its name",
     because: "The greeter still works; it stops naming the machine.",
+    advisory: GREETER_ADVICE("show-hostname"),
   },
   {
     id: "greeter-quit",
@@ -36,6 +47,7 @@ export const DESKTOP_EXTRA_POLICIES: SettingPolicy[] = [
     because:
       "You can still shut down from inside your session. Holding the power " +
       "button always works.",
+    advisory: GREETER_ADVICE("show-power"),
   },
   {
     id: "warpinator-autostart",

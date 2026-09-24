@@ -309,6 +309,8 @@ const ROWS: Row[] = [
     "They fade out of the way and stay in the tray.",
   ],
   [
+    // The id predates the row's real subject and is kept because ids key the
+    // fix log; what it checks is `backlight-helper-force`.
     "numlock-remember",
     MEDIA_KEYS,
     "backlight-helper-force",
@@ -317,8 +319,8 @@ const ROWS: Row[] = [
     "resource",
     "minor",
     13,
-    "Backlight control is forced through a helper",
-    "brightness changes take a subprocess each time",
+    "Screen brightness is forced through the backlight helper",
+    "every brightness change goes through a helper program instead of the kernel's own backlight interface",
     "The kernel interface is used directly where it works.",
   ],
   [
@@ -344,6 +346,8 @@ const ROWS: Row[] = [
 const ADVISORY: Record<string, string> = {
   "lid-inhibit":
     "No automatic fix. Ignoring the lid switch is exactly what you want on a docked laptop with the lid shut, and turning it off would make the machine suspend the moment you close it. Change it in Power settings if it was not deliberate.",
+  "numlock-remember":
+    "No automatic fix. Forcing the backlight helper is the workaround for panels whose kernel backlight interface does nothing or picks the wrong device, and on those machines turning it off leaves the brightness keys dead. If brightness works either way, you can turn it off in dconf-editor under org.cinnamon.settings-daemon.plugins.power.",
   "idle-dim-ac":
     "No automatic fix. Whether the screen dims when you step away is a preference, not a fault. Change it in Power settings.",
 };

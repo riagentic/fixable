@@ -73,7 +73,8 @@ export const MEDIA_POLICIES: SettingPolicy[] = [
     key: "disable-save-to-disk",
     bad: "true",
     safe: "false",
-    detail: "applications cannot write files — usually set by mistake",
+    detail:
+      "applications cannot write files — a lockdown an administrator or a kiosk profile sets on purpose, and occasionally one left behind by mistake",
     because: "Restores the ability to save. Nothing existing is touched.",
   },
   {

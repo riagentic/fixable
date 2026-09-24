@@ -32,7 +32,7 @@ const ROWS: Row[] = [
   [
     "media-devices",
     "media.navigator.enumerate.legacy.enabled",
-    "true",
+    "false",
     "true",
     "false",
     "privacy",
@@ -104,7 +104,7 @@ const ROWS: Row[] = [
   [
     "network-info",
     "dom.netinfo.enabled",
-    "true",
+    "false",
     "true",
     "false",
     "privacy",
@@ -212,13 +212,13 @@ const ROWS: Row[] = [
   [
     "safebrowsing-provider",
     "browser.safebrowsing.provider.google4.updateURL",
-    '""',
+    '"https://safebrowsing.googleapis.com/v4/threatListUpdates:fetch?$ct=application/x-protobuf&key=%GOOGLE_SAFEBROWSING_API_KEY%&$httpMethod=POST"',
     "~google",
     '""',
     "privacy",
     41,
     "Safe Browsing list updates go to Google",
-    "the update request carries identifying details on a schedule",
+    "the browser fetches its blocklist from Google on a schedule, so Google sees this machine's address regularly — the lists themselves are checked locally",
     "Removing the URL disables list updates — the protection stops with it, so this is a trade.",
   ],
   [
@@ -283,13 +283,15 @@ const ROWS: Row[] = [
   ],
   [
     "proxy-dns",
-    "network.proxy.socks_remote_dns",
-    "false",
+    // Since Firefox 128 the old pref covers SOCKS4 only; SOCKS5 has its own,
+    // on by default, so this fires only when somebody turned it off.
+    "network.proxy.socks5_remote_dns",
+    "true",
     "false",
     "true",
     "privacy",
     51,
-    "DNS is resolved locally when using a SOCKS proxy",
+    "DNS is resolved locally when using a SOCKS5 proxy",
     "the proxy carries your traffic while your own resolver still sees every name — the classic proxy leak",
     "Names are resolved through the proxy. No effect when no proxy is set.",
   ],

@@ -172,7 +172,7 @@ const ROWS: Row[] = [
     45,
     "Saved passwords are checked against a remote breach service",
     "a hashed form of your credentials is sent for lookup — a real protection with a real disclosure",
-    "Nothing about saving or filling passwords changes.",
+    "Saving and filling passwords are unchanged, but the browser stops warning you when one of them turns up in a breach.",
   ],
   [
     "url-keyed-metrics",

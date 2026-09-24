@@ -49,16 +49,20 @@ const ULIMITS: [
   string,
   SysRootFix?,
 ][] = [
+  // No fix, and the line is 1024, not higher. 1024 soft is deliberate:
+  // select() cannot see a descriptor past 1023, so raising the soft limit
+  // for everything breaks the programs still built on it, while the ones that
+  // need more raise their own soft limit up to the hard ceiling. A soft limit
+  // BELOW 1024 is the fault; the remedy is whatever lowered it.
   [
     "nofile-soft",
     "-Sn",
-    4096,
+    1024,
     "major",
     72,
-    "The open-file limit is low",
+    "The open-file limit is below the standard 1024",
     "editors, browsers and language servers each hold hundreds of descriptors; at this ceiling they start failing with 'too many open files'",
-    "Raise it in /etc/security/limits.conf (`* soft nofile 65535`) and `DefaultLimitNOFILE=65535` in /etc/systemd/system.conf, then log out and back in.",
-    limit("soft nofile", "65535", "open-file soft limit raised to 65535"),
+    "Something lowered it: look for a `nofile` line in /etc/security/limits.conf and /etc/security/limits.d/, and remove it. Leave the soft limit at 1024 — programs that need more raise their own, up to the hard limit.",
   ],
   [
     "nofile-hard",
@@ -146,22 +150,22 @@ export const LIMIT_POLICIES: SysPolicy[] = [
   },
   {
     id: "limit-systemd-nofile",
-    title: "The system-wide open-file default is low",
+    title: "The system-wide open-file ceiling is low",
     category: "stability",
     severity: "minor",
     weight: 48,
-    source: sh("systemctl show -p DefaultLimitNOFILESoft --value 2>/dev/null"),
-    bad: "<4096",
+    // The HARD limit, and no fix. systemd ships 1024:524288 — a select()-safe
+    // soft limit under a high ceiling services raise themselves to — and the
+    // only drop-in that could raise the ceiling has to restate the soft half
+    // too, overwriting whatever somebody chose for it.
+    source: sh(
+      'v=$(systemctl show -p DefaultLimitNOFILE --value 2>/dev/null); [ "$v" = infinity ] && echo 999999999 || echo "$v"',
+    ),
+    bad: "<524288",
     detail:
-      "every service inherits this ceiling, whatever your shell limits say",
+      "every service inherits this ceiling and cannot raise its own open-file limit past it",
     how:
-      "Set `DefaultLimitNOFILE=65535` in /etc/systemd/system.conf and reboot.",
-    fix: {
-      path: "/etc/systemd/system.conf.d/99-fixable.conf",
-      mode: "0644",
-      text: "[Manager]\nDefaultLimitNOFILE=65535",
-      summary: "system-wide open-file default raised to 65535",
-    },
+      "Set `DefaultLimitNOFILE=1024:524288` (systemd's own default) in /etc/systemd/system.conf, or remove the line that lowered it, and reboot.",
   },
   {
     id: "limit-user-tasks",

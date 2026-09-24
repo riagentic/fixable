@@ -727,30 +727,44 @@ const UDP: Row[] = [
   [54321, "alt", "a service on a commonly probed port answers", "minor", 11],
 ];
 
-/** `/proc/net/{tcp,udp}` — the dependency-free reading. `00000000` is 0.0.0.0,
- *  state `0A` is LISTEN for TCP; a UDP socket has no listen state, so an
- *  unconnected socket bound to a wildcard address is the equivalent. */
+/** `/proc/net/{tcp,udp}{,6}` — the dependency-free reading. A wildcard local
+ *  address is `00000000` (0.0.0.0) or 32 zeros (::); state `0A` is LISTEN for
+ *  TCP, and `07` is an unconnected UDP socket, which is UDP's equivalent. Both
+ *  address families are read in one call, shared by every row of a protocol:
+ *  a service on `::` is as reachable as one on `0.0.0.0`. */
+const STATE = { tcp: "0A", udp: "07" } as const;
+
 const row = (proto: "tcp" | "udp") =>
 (
   [port, name, why, severity, weight]: Row,
-): SysPolicy => ({
-  id: `port-${proto}-${port}`,
-  title: `${proto.toUpperCase()} port ${port} (${name}) is open to the network`,
-  category: "security",
-  severity,
-  weight,
-  source: { kind: "file", path: `/proc/net/${proto}` },
-  // The engine matches on text, so the port is encoded the way the file spells
-  // it: a wildcard local address followed by the port in upper-case hex.
-  bad: `~00000000:${
-    port.toString(16).toUpperCase().padStart(4, "0")
-  } ` as const,
-  detail: why,
-  how: `Find the owner with \`sudo ss -lnp${proto === "tcp" ? "t" : "u"} ` +
-    `'sport = :${port}'\`, then either stop it, bind it to 127.0.0.1 in its ` +
-    `own configuration, or block the port at the firewall. Do not simply ` +
-    `kill it — something on this machine opened it deliberately.`,
-});
+): SysPolicy => {
+  const hex = port.toString(16).toUpperCase().padStart(4, "0");
+  return {
+    id: `port-${proto}-${port}`,
+    title:
+      `${proto.toUpperCase()} port ${port} (${name}) is open to the network`,
+    category: "security",
+    severity,
+    weight,
+    source: {
+      kind: "cmd",
+      cmd: "cat",
+      args: [`/proc/net/${proto}`, `/proc/net/${proto}6`],
+    },
+    // The file's own spelling: one socket line, wildcard local address, this
+    // port in upper-case hex, the listening state. The header line and every
+    // other socket never match, so no match is no finding.
+    extract: `^\\s*\\d+:\\s+((?:0{8}|0{32}):${hex})\\s+\\S+\\s+${
+      STATE[proto]
+    }\\s`,
+    bad: `~00000000:${hex}` as const,
+    detail: why,
+    how: `Find the owner with \`sudo ss -lnp${proto === "tcp" ? "t" : "u"} ` +
+      `'sport = :${port}'\`, then either stop it, bind it to 127.0.0.1 in its ` +
+      `own configuration, or block the port at the firewall. Do not simply ` +
+      `kill it — something on this machine opened it deliberately.`,
+  };
+};
 
 export const PORT_POLICIES: SysPolicy[] = [
   ...TCP.map(row("tcp")),

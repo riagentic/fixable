@@ -1,25 +1,26 @@
 // Running a root plan. The only privileged code path in the app.
 //
-// Fixable never handles your password. It writes the script — the same script
-// the UI showed you, byte for byte — and hands the file to `pkexec`, which is
-// the desktop's own way of asking. The prompt you answer is polkit's, drawn by
-// the system, and the password goes from that dialog to the kernel without
-// passing through this process, this app's state, its log, or its socket.
+// Fixable never handles your password. It hands the script — the same script
+// the UI showed you, byte for byte — to `pkexec`, which is the desktop's own
+// way of asking. The prompt you answer is polkit's, drawn by the system, and
+// the password goes from that dialog to the kernel without passing through
+// this process, this app's state, its log, or its socket.
 //
 // That is not squeamishness. This app has a web UI: a password typed into it
 // would travel a WebSocket, sit in a form field, land in a cell method's
 // arguments, and be one careless log line from disk. Not asking for it is the
 // only way to be sure none of that happens.
 //
-// The script itself is written to a directory only this user can enter, at
-// mode 0600, and deleted afterwards — so between writing and running there is
-// no window in which anybody but its owner (and root, who is about to run it)
-// can read or replace it.
+// The script reaches the root shell on a pipe this process holds, never as a
+// file: a file under $HOME is writable by every other program running as you,
+// and swapping it between "shown" and "run" would be root for the asking. A
+// file is written only when there is no way to ask, so you can read it and
+// run it yourself.
 import type { RootChange, RootOp } from "../type/check.ts";
 import type { RootIntent } from "../lib/root.ts";
 import { buildScript, isDropIn, parseResult } from "../lib/root.ts";
 import { parseDropIn, renderDropIn, withBlock } from "../lib/dropin.ts";
-import { has, home, readText } from "./sys.server.ts";
+import { home, readText } from "./sys.server.ts";
 
 /** Fold what the checks asked for into what root will actually do.
  *
@@ -75,20 +76,37 @@ export type RootRun = {
 
 const stateDir = (): string => `${home()}/.local/state/fixable`;
 
-/** Where the script lives for the seconds it exists. Under the user's own
- *  state directory, not /tmp: a world-writable directory is exactly where a
- *  file about to be executed by root should never be. */
+/** Where the script is left when this session cannot ask for a password.
+ *  Under the user's own state directory, not /tmp: a world-writable directory
+ *  is exactly where a file somebody may run as root should never be. */
 const scriptPath = (): string => `${stateDir()}/root-plan.sh`;
 
 const writeScript = async (text: string): Promise<string> => {
   const path = scriptPath();
   await Deno.mkdir(stateDir(), { recursive: true, mode: 0o700 });
-  // Chmod separately: `mkdir` leaves an existing directory's mode alone, and
-  // this one is about to hold a file root will execute.
-  await Deno.chmod(stateDir(), 0o700).catch(() => {});
+  // Chmod separately: `mkdir` leaves an existing directory's mode alone.
+  await Deno.chmod(stateDir(), 0o700);
   await Deno.writeTextFile(path, text, { mode: 0o600 });
   await Deno.chmod(path, 0o600);
   return path;
+};
+
+/** Where polkit installs its setuid helper. Absolute, never looked up on
+ *  PATH: a directory early on PATH is writable by the user, and a `pkexec`
+ *  planted there would draw its own "password" dialog. */
+const PKEXEC_PATHS = [
+  "/usr/bin/pkexec",
+  "/bin/pkexec",
+  "/run/wrappers/bin/pkexec", // NixOS
+] as const;
+
+const findPkexec = async (): Promise<string | null> => {
+  for (const p of PKEXEC_PATHS) {
+    try {
+      if ((await Deno.stat(p)).isFile) return p;
+    } catch { /* not here */ }
+  }
+  return null;
 };
 
 /** polkit's exit code for "the user cancelled, or could not authenticate". */
@@ -110,10 +128,12 @@ const cannotAsk = (path: string) =>
  *  the caller knows exactly what landed.
  *
  *  Never throws for anything the user did — a cancelled prompt is a normal
- *  answer, and comes back as `problem` with nothing changed. */
+ *  answer, and comes back as `problem` with nothing changed. `pkexec` is a
+ *  parameter only so a test can stand in for polkit. */
 export async function runRootPlan(
   ops: readonly RootOp[],
   intent: RootIntent = "fix",
+  pkexec?: string,
 ): Promise<RootRun> {
   const none = (problem: string): RootRun => ({
     done: [],
@@ -129,62 +149,55 @@ export async function runRootPlan(
   // Throws if any op fails the gate. Deliberately not caught: a plan that
   // should not run is a bug in the catalogue, and the caller must hear it.
   const script = buildScript(ops, intent);
-  const path = await writeScript(script);
 
-  // Set when the script has to outlive this call: the only case is "there is
-  // no way to ask for a password here", where the plan itself is the useful
-  // answer and the message points at it.
-  let keep = false;
-  try {
-    if (!(await has("pkexec"))) {
-      keep = true;
-      return none(cannotAsk(path));
+  const helper = pkexec ?? await findPkexec();
+  if (helper === null) return none(cannotAsk(await writeScript(script)));
+
+  // No timeout: the person is being asked for a password, and how long they
+  // take is their business. pkexec exits by itself when its dialog is
+  // dismissed. `sh` with no operand reads its commands from stdin — the pipe
+  // below, which nothing but this process can write to.
+  const child = new Deno.Command(helper, {
+    args: ["/bin/sh"],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  // Fed while the output drains, so neither pipe can fill and wedge the
+  // other. A shell that died before reading all of it (a refused prompt)
+  // closes the pipe; that is reported by its exit code, not by this write.
+  const feed = async () => {
+    const writer = child.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(script)).catch(() => {});
+    await writer.close().catch(() => {});
+  };
+  const [, out] = await Promise.all([feed(), child.output()]);
+  const stdout = new TextDecoder().decode(out.stdout);
+  const stderr = new TextDecoder().decode(out.stderr).trim();
+
+  const { steps } = parseResult(stdout);
+  const seen = new Set(steps.map((s) => s.index));
+
+  if (steps.length === 0) {
+    if (out.code === PKEXEC_DENIED) {
+      return none("Cancelled — no password given, and nothing was changed.");
     }
-
-    // No timeout wrapper: the person is being asked for a password, and how
-    // long they take is their business. pkexec exits by itself when its
-    // dialog is dismissed.
-    const cmd = new Deno.Command("pkexec", {
-      args: ["/bin/sh", path],
-      stdin: "null",
-      stdout: "piped",
-      stderr: "piped",
-    });
-    const out = await cmd.output();
-    const stdout = new TextDecoder().decode(out.stdout);
-    const stderr = new TextDecoder().decode(out.stderr).trim();
-
-    const { steps } = parseResult(stdout);
-    const seen = new Set(steps.map((s) => s.index));
-
-    if (steps.length === 0) {
-      if (out.code === PKEXEC_DENIED) {
-        return none("Cancelled — no password given, and nothing was changed.");
-      }
-      if (out.code === PKEXEC_MISSING) {
-        keep = true;
-        return none(cannotAsk(path));
-      }
-      return none(
-        `Nothing ran${stderr ? `: ${stderr}` : "."} Nothing was changed.`,
-      );
+    if (out.code === PKEXEC_MISSING) {
+      return none(cannotAsk(await writeScript(script)));
     }
-
-    return {
-      done: steps.filter((s) => s.ok).map((s) => s.index),
-      failed: steps.filter((s) => !s.ok).map((s) => s.index),
-      // A step with no marker never reached its `echo`. Reported as skipped
-      // rather than failed: it is not known to have changed anything.
-      skipped: ops.map((_, i) => i).filter((i) => !seen.has(i)),
-      problem: null,
-    };
-  } finally {
-    // The script has served its purpose the moment the shell exits. Leaving a
-    // file behind that root will happily execute is not a thing to do — the
-    // exception is the one message that tells you to go and run it yourself,
-    // which would otherwise name a file that had just been deleted.
-    if (!keep) await Deno.remove(path).catch(() => {});
+    return none(
+      `Nothing ran${stderr ? `: ${stderr}` : "."} Nothing was changed.`,
+    );
   }
+
+  return {
+    done: steps.filter((s) => s.ok).map((s) => s.index),
+    failed: steps.filter((s) => !s.ok).map((s) => s.index),
+    // A step with no marker never reached its `echo`. Reported as skipped
+    // rather than failed: it is not known to have changed anything.
+    skipped: ops.map((_, i) => i).filter((i) => !seen.has(i)),
+    problem: null,
+  };
 }
 
 /** Read a drop-in Fixable owns, so a plan can record what it is replacing.

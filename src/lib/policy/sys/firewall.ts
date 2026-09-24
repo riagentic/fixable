@@ -111,7 +111,7 @@ export const FIREWALL_POLICIES: SysPolicy[] = [
   },
   {
     id: "fw-forwarding-on",
-    title: "Packet forwarding is enabled with no firewall in front of it",
+    title: "This machine routes packets between its networks",
     category: "security",
     severity: "major",
     weight: 80,

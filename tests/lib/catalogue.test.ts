@@ -2,18 +2,22 @@
 // matter of adding rows: a row that would misbehave on someone's machine fails
 // here instead, before it can ever be probed.
 import { assertEquals } from "@std/assert";
-import { clears, isBad } from "../../lib/verdict.ts";
-import { SETTING_POLICIES } from "../../cell/check-desktop.server.ts";
-import { PERM_POLICIES } from "../../lib/policy/perms.ts";
-import { GIT_POLICIES } from "../../lib/policy/git.ts";
-import { SYSCTL_POLICIES } from "../../lib/policy/sysctl.ts";
-import { CONF_POLICIES } from "../../cell/check-conf.server.ts";
-import { SSH_POLICIES } from "../../lib/policy/ssh.ts";
-import { MOZILLA_POLICIES } from "../../cell/check-mozilla.server.ts";
-import { ALL_CHROMIUM_POLICIES as CHROMIUM_POLICIES } from "../../cell/check-chromium.server.ts";
-import { ETC_POLICIES } from "../../cell/check-etc.server.ts";
-import { CHECKS } from "../../cell/checks.server.ts";
-import { NO_BUTTON, OPTIONAL, RETIRED } from "../../lib/policy/preferences.ts";
+import { clears, isBad } from "../../src/lib/verdict.ts";
+import { SETTING_POLICIES } from "../../src/cell/check-desktop.server.ts";
+import { PERM_POLICIES } from "../../src/lib/policy/perms.ts";
+import { GIT_POLICIES } from "../../src/lib/policy/git.ts";
+import { SYSCTL_POLICIES } from "../../src/lib/policy/sysctl.ts";
+import { CONF_POLICIES } from "../../src/cell/check-conf.server.ts";
+import { SSH_POLICIES } from "../../src/lib/policy/ssh.ts";
+import { MOZILLA_POLICIES } from "../../src/cell/check-mozilla.server.ts";
+import { ALL_CHROMIUM_POLICIES as CHROMIUM_POLICIES } from "../../src/cell/check-chromium.server.ts";
+import { ETC_POLICIES } from "../../src/cell/check-etc.server.ts";
+import { CHECKS } from "../../src/cell/checks.server.ts";
+import {
+  NO_BUTTON,
+  OPTIONAL,
+  RETIRED,
+} from "../../src/lib/policy/preferences.ts";
 
 Deno.test("isBad answers booleans, integers and 'cannot tell'", () => {
   assertEquals(isBad("true", "true"), true);
@@ -189,7 +193,9 @@ Deno.test("the assembled catalogue is coherent", () => {
   // rather than on the tables that feed it.
   const ids = CHECKS.map((c) => c.id);
   assertEquals(new Set(ids).size, ids.length, "duplicate check id in registry");
-  assertEquals(CHECKS.length >= 1000, true, `only ${CHECKS.length} checks`);
+  // The spec's floor (.katana/app.md). Retiring a row is fine; retiring past
+  // this means adding a real one, not keeping a dead one.
+  assertEquals(CHECKS.length >= 2000, true, `only ${CHECKS.length} checks`);
   for (const c of CHECKS) {
     assertEquals(c.title.length > 10, true, `${c.id}: thin title`);
     assertEquals(c.explanation.length > 60, true, `${c.id}: thin explanation`);
@@ -214,7 +220,7 @@ Deno.test("the audit still names checks that exist", async () => {
   // match nothing, the check would go back to writing, and nobody would know
   // until it changed a setting on somebody's machine. So the audit is checked
   // against the catalogue, not trusted.
-  const { CHECKS: RAW } = await import("../../cell/checks.server.ts");
+  const { CHECKS: RAW } = await import("../../src/cell/checks.server.ts");
   const live = new Set(RAW.map((c) => c.id));
   const retired = new Set(Object.keys(RETIRED));
   for (const id of [...Object.keys(OPTIONAL), ...Object.keys(NO_BUTTON)]) {
@@ -286,7 +292,7 @@ Deno.test("nothing read from the running system may write", async () => {
   // cannot see. The engine gives every one of these checks tier "advisory";
   // this asserts the whole family really did come out that way — including
   // that none of them acquired a root plan when the sudo tier arrived.
-  const { SYS_POLICIES } = await import("../../cell/checks.server.ts");
+  const { SYS_POLICIES } = await import("../../src/cell/checks.server.ts");
   const ids = new Set(SYS_POLICIES.map((p) => p.id));
   assertEquals(ids.size > 500, true, `only ${ids.size} system readings`);
   // A row may opt out, but only by naming a drop-in — and the vocabulary for
@@ -312,8 +318,8 @@ Deno.test("a system reading that writes can only write a Fixable drop-in", async
   // the level of the shell. Every drop-in path a row names has to be one the
   // gate in lib/root.ts would accept, so a typo — or a path that is somebody
   // else's file — fails here rather than at a password prompt.
-  const { SYS_POLICIES } = await import("../../cell/checks.server.ts");
-  const { isDropIn } = await import("../../lib/root.ts");
+  const { SYS_POLICIES } = await import("../../src/cell/checks.server.ts");
+  const { isDropIn } = await import("../../src/lib/root.ts");
   for (const p of SYS_POLICIES.filter((x) => x.fix)) {
     assertEquals(
       isDropIn(p.fix!.path),
@@ -400,9 +406,9 @@ Deno.test("every kernel parameter is either allowed as root or refused by name",
   // password behind it: a row cannot default into being writable, and a
   // rename cannot quietly move one across the line. Both directions are
   // checked, so an id that no longer exists is also caught.
-  const { SYSCTL_POLICIES } = await import("../../lib/policy/sysctl.ts");
+  const { SYSCTL_POLICIES } = await import("../../src/lib/policy/sysctl.ts");
   const { SYSCTL_ROOT_DENIED, SYSCTL_ROOT_SAFE } = await import(
-    "../../lib/policy/root-safe.ts"
+    "../../src/lib/policy/root-safe.ts"
   );
   const ids = new Set(SYSCTL_POLICIES.map((p) => p.id));
   for (const id of ids) {
@@ -426,7 +432,9 @@ Deno.test("nothing that would break containers, the network or a debugger is wri
   // happily tell you to set and that would, on this machine, stop Docker from
   // starting, leave a laptop with no IPv6, or turn `gdb -p` into a permission
   // error. If one of them ever shows up in the allowed set, this fails.
-  const { SYSCTL_ROOT_SAFE } = await import("../../lib/policy/root-safe.ts");
+  const { SYSCTL_ROOT_SAFE } = await import(
+    "../../src/lib/policy/root-safe.ts"
+  );
   const FORBIDDEN = [
     "sysctl-userns", // Docker, podman, Flatpak, Chromium sandboxes
     "sysctl-max-user-namespaces",
@@ -443,6 +451,7 @@ Deno.test("nothing that would break containers, the network or a debugger is wri
     "sysctl-unprivileged-bpf",
     "sysctl-panic-on-oops", // turns a survivable fault into a reboot
     "sysctl-ip-local-port-range", // ephemeral ports colliding with services
+    "sysctl-route-localnet", // kube-proxy and Docker localhost port publishing
   ];
   for (const id of FORBIDDEN) {
     assertEquals(
@@ -458,7 +467,7 @@ Deno.test("a trade can only be marked on something already allowed", async () =>
   // it. A refused parameter named here would otherwise become writable by
   // being called a choice.
   const { SYSCTL_ROOT_OPTIONAL, SYSCTL_ROOT_SAFE } = await import(
-    "../../lib/policy/root-safe.ts"
+    "../../src/lib/policy/root-safe.ts"
   );
   for (const id of Object.keys(SYSCTL_ROOT_OPTIONAL)) {
     assertEquals(
@@ -473,7 +482,7 @@ Deno.test("a root fix is never swept up unless it is a repair", async () => {
   // "Fix all (sudo required)" takes the `sudo` tier and nothing else. A change
   // that trades a capability away needs a password AND a deliberate press, and
   // the tier is what carries the second half of that.
-  const { CHECKS: ALL } = await import("../../cell/checks.server.ts");
+  const { CHECKS: ALL } = await import("../../src/cell/checks.server.ts");
   for (const c of ALL.filter((x) => x.tier === "sudo")) {
     assertEquals(
       c.id in OPTIONAL || c.id in NO_BUTTON,

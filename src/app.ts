@@ -3,6 +3,7 @@
 import { issues } from "./cell/issues.ts";
 import { aio } from "aio";
 
+// aio-ok: one local user and one window, and the UI reads every key it is sent.
 await aio.run({
   // Pinned here rather than inferred: the id keys the data directory, and a
   // compiled binary cannot read deno.json to find it out.

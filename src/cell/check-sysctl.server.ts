@@ -20,6 +20,7 @@ import type { Check, Finding } from "../type/check.ts";
 import type { SysctlPolicy } from "../type/policy.ts";
 import { SYSCTL_POLICIES } from "../lib/policy/sysctl.ts";
 import {
+  SYSCTL_REBOOT_ONLY,
   SYSCTL_ROOT_DENIED,
   SYSCTL_ROOT_OPTIONAL,
   SYSCTL_ROOT_SAFE,
@@ -31,6 +32,18 @@ import { readText } from "./sys.server.ts";
  *  file read instead of one subprocess, and a hundred checks run on every
  *  scan. */
 const procPath = (key: string) => `/proc/sys/${key.replaceAll(".", "/")}`;
+
+/** Some parameters are mode 0600 (`net.core.bpf_jit_harden`, the rest of the
+ *  BPF JIT family): unreadable to the account this app runs as, which is
+ *  "cannot measure here", not a failed check. */
+const readRoot = async (path: string): Promise<string | null> => {
+  try {
+    return await readText(path);
+  } catch (e) {
+    if (e instanceof Deno.errors.PermissionDenied) return null;
+    throw e;
+  }
+};
 
 /** The one file this family writes. One drop-in for every kernel parameter
  *  rather than one per check: a hundred files in /etc/sysctl.d is a mess
@@ -45,9 +58,13 @@ export function sysctlCheck(p: SysctlPolicy): Check {
   // string is what it costs, said before the button is pressed.
   const choice = SYSCTL_ROOT_OPTIONAL[p.id];
   const refused = SYSCTL_ROOT_DENIED[p.id];
+  const rebootOnly = SYSCTL_REBOOT_ONLY[p.id];
 
+  // Multi-value parameters come back tab-separated (`32768\t60999`) and are
+  // written space-separated; one spelling, so a clause and a detail line read
+  // the same value the drop-in would hold.
   const read = async (): Promise<string | null> => {
-    const raw = (await readText(procPath(p.key)))?.trim();
+    const raw = (await readRoot(procPath(p.key)))?.trim().replace(/\s+/g, " ");
     return raw === undefined || raw === "" ? null : raw;
   };
 
@@ -67,10 +84,11 @@ export function sysctlCheck(p: SysctlPolicy): Check {
         `belongs to this app, so nothing the system ships is edited — and ` +
         `applies it. Needs the root password; Undo removes that one line ` +
         `again and puts the previous value back.`
-      : `No automatic fix. ${refused ?? ""} Set it yourself if you want it, ` +
-        `with \`sudo sysctl -w ${p.key}=${p.safe}\`, and make it survive a ` +
-        `reboot by adding \`${p.key} = ${p.safe}\` to ` +
-        `/etc/sysctl.d/99-local.conf.`,
+      : `No automatic fix. ${refused ?? ""} ` + (rebootOnly ??
+        `Set it yourself if you want it, with ` +
+          `\`sudo sysctl -w ${p.key}=${p.safe}\`, and make it survive a ` +
+          `reboot by adding \`${p.key} = ${p.safe}\` to ` +
+          `/etc/sysctl.d/99-local.conf.`),
     probe: async (): Promise<Finding | null> => {
       const raw = await read();
       if (raw === null) return null; // not on this kernel

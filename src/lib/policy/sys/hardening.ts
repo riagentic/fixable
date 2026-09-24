@@ -323,4 +323,50 @@ export const HARDENING_POLICIES: SysPolicy[] = [
     how:
       "Add `module.sig_enforce=1` to the kernel command line, after confirming every module you rely on is signed.",
   },
+  // The command line the kernel actually booted with, not /etc/default/grub:
+  // the file can say one thing and a stale boot entry another, and only this
+  // one is in force. Each row asks about one token that switches a protection
+  // off — presence is the finding, so nothing depends on how the line is
+  // quoted or ordered.
+  {
+    id: "hard-apparmor-cmdline",
+    title: "AppArmor is switched off on the kernel command line",
+    category: "security",
+    severity: "major",
+    weight: 81,
+    source: { kind: "file", path: "/proc/cmdline" },
+    bad: "~apparmor=0",
+    detail:
+      "`apparmor=0` at boot means no profile is loaded, whatever the AppArmor service reports",
+    how:
+      "Remove `apparmor=0` from GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, run `sudo update-grub`, and reboot.",
+  },
+  {
+    id: "hard-cmdline-nokaslr",
+    title: "Kernel address randomisation is switched off at boot",
+    category: "security",
+    severity: "major",
+    weight: 74,
+    source: { kind: "file", path: "/proc/cmdline" },
+    bad: "~nokaslr",
+    detail:
+      "`nokaslr` loads the kernel at the same address every boot, so an exploit needs no information leak to find its targets",
+    how:
+      "Remove `nokaslr` from GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, run `sudo update-grub`, and reboot. It is usually left over from kernel debugging.",
+  },
+  {
+    id: "hard-cmdline-nosmap",
+    title: "The kernel is allowed to touch user memory unchecked",
+    category: "security",
+    severity: "major",
+    weight: 73,
+    source: { kind: "file", path: "/proc/cmdline" },
+    // Either token; the capture is whichever one is there.
+    extract: "(?:^|\\s)(nosmap|nosmep)(?=\\s|$)",
+    bad: "~nosm",
+    detail:
+      "`nosmap` or `nosmep` turns off the CPU features that stop the kernel reading or running user memory by mistake — the shortcut most kernel exploits rely on",
+    how:
+      "Remove the token from GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, run `sudo update-grub`, and reboot.",
+  },
 ];

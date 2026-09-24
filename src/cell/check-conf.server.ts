@@ -6,7 +6,12 @@ import type { Check, Finding } from "../type/check.ts";
 import type { ConfPolicy } from "../type/policy.ts";
 import { disableKey, readKey, upsertKey } from "../lib/conf.ts";
 import { has, home, readText } from "./sys.server.ts";
-import { parentExists, restoreConf, writeConf } from "./conf.server.ts";
+import {
+  isSymlink,
+  parentExists,
+  restoreConf,
+  writeConf,
+} from "./conf.server.ts";
 import { GNUPG_POLICIES } from "../lib/policy/gnupg.ts";
 import { TOOL_POLICIES } from "../lib/policy/tools.ts";
 import { TOOL2_POLICIES } from "../lib/policy/tools2.ts";
@@ -66,6 +71,13 @@ export function confCheck(p: ConfPolicy): Check {
         current === null ? `${p.key} unset` : shows(p, current)
       })`;
       if (!auto) return { detail };
+      // A linked dotfile (stow, a dotfiles repo) is reported without a button:
+      // writeConf would refuse it anyway, and a Fix that can only fail is noise.
+      if (await isSymlink(path)) {
+        return {
+          detail: `${detail} — ~/${p.file} is a symlink; edit it by hand`,
+        };
+      }
 
       return {
         detail,

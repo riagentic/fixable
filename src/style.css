@@ -5,7 +5,11 @@
   --border: #262d38;
   --text: #e6edf3;
   --muted: #8b949e;
-  --accent: #2f81f7;
+  /* #1f6feb: white on it is 4.6:1, #58a6ff on the raised surfaces is 5.2:1 —
+     both clear of WCAG AA for 14px text. */
+  --accent: #1f6feb;
+  --accent-hover: #1a66d9;
+  --accent-text: #58a6ff;
   --ok: #3fb950;
   --critical: #f85149;
   --major: #d29922;
@@ -113,6 +117,13 @@ body {
   color: var(--text);
 }
 
+/* `.switch` clips its children to the rounded border, which would clip a
+   focus ring drawn outside them — so this one is drawn inside. */
+.seg:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -2px;
+}
+
 .seg.on {
   background: #253044;
   color: var(--text);
@@ -184,8 +195,13 @@ body {
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #4a92f8;
-  border-color: #4a92f8;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
 }
 
 .btn.small {
@@ -244,6 +260,8 @@ table.issues th {
 
 table.issues td {
   padding: 13px 16px;
+  /* One long path must not push the Fix column out of the panel. */
+  overflow-wrap: anywhere;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
@@ -274,7 +292,7 @@ table.issues tr:last-child td {
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 12px;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .col-cat,
@@ -330,9 +348,19 @@ table.issues tr:last-child td {
   font-size: 13px;
 }
 
+.log-row > span:first-child,
+.log-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .log-row code {
   color: var(--muted);
   font-size: 12px;
+}
+
+.log > .btn {
+  margin-top: 4px;
 }
 
 /* ------------------------------------------------------------- categories */
@@ -396,7 +424,7 @@ td .chip.cat {
 }
 
 .seg.on em {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* A root fix and an optional one are both buttons, and neither should look
@@ -433,7 +461,7 @@ td .chip.cat {
   font-size: 11.5px;
   line-height: 1.45;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* The consent panel. Deliberately the loudest thing on the page while it is
@@ -488,6 +516,7 @@ td .chip.cat {
 
 .plan-items code {
   display: block;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 12px;
 }
@@ -496,15 +525,12 @@ td .chip.cat {
   border-top: 1px solid #2f2745;
 }
 
-.plan-script summary {
+.plan-script h3 {
+  margin: 0;
   padding: 10px 18px;
-  cursor: pointer;
   color: var(--muted);
   font-size: 12.5px;
-}
-
-.plan-script summary:hover {
-  color: var(--text);
+  font-weight: 500;
 }
 
 .plan-script pre {
@@ -515,4 +541,6 @@ td .chip.cat {
   color: #c9d1d9;
   font-size: 11.5px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

@@ -256,6 +256,15 @@ const LISTEN: [
   ],
 ];
 
+/** A /proc/net address on the loopback, in the kernel's byte order: each
+ *  32-bit word is printed little-endian, so 127.x.y.z ends in `7F`, `::1` is
+ *  `…01000000`, and `::ffff:127.x.y.z` has `FFFF0000` as its third word. */
+const loopback = (addr: string): boolean =>
+  addr.length === 8
+    ? addr.endsWith("7F")
+    : addr === "00000000000000000000000001000000" ||
+      (addr.startsWith("0000000000000000FFFF0000") && addr.endsWith("7F"));
+
 const listenCheck = (
   [port, name, why, severity, weight]: (typeof LISTEN)[number],
 ): Check => ({
@@ -272,17 +281,21 @@ const listenCheck = (
     `to 127.0.0.1 instead, or block the port at the firewall. ` +
     `\`sudo ss -ltnp 'sport = :${port}'\` names the process.`,
   probe: async (): Promise<Finding | null> => {
-    // /proc/net/tcp is the dependency-free reading; 00000000 is 0.0.0.0 and
-    // 0A is the LISTEN state.
-    const raw = await readText("/proc/net/tcp");
-    if (raw === null) return null;
+    // /proc/net/tcp{,6} is the dependency-free reading; 0A is LISTEN. IPv6
+    // matters too: a daemon bound to `::` accepts IPv4 as well, and would
+    // never appear in /proc/net/tcp at all.
+    const v4 = await readText("/proc/net/tcp");
+    if (v4 === null) return null;
+    const v6 = (await readText("/proc/net/tcp6")) ?? "";
     const hex = port.toString(16).toUpperCase().padStart(4, "0");
-    const open = raw.split("\n").slice(1).some((l) => {
-      const f = l.trim().split(/\s+/);
-      const local = f[1] ?? "";
-      return f[3] === "0A" && local.endsWith(`:${hex}`) &&
-        !local.startsWith("0100007F"); // not 127.0.0.1
-    });
+    const open = [v4, v6].some((raw) =>
+      raw.split("\n").slice(1).some((l) => {
+        const f = l.trim().split(/\s+/);
+        const [addr, p] = (f[1] ?? "").split(":");
+        return f[3] === "0A" && p === hex && addr !== undefined &&
+          !loopback(addr);
+      })
+    );
     return open ? { detail: why } : null;
   },
 });
@@ -385,9 +398,12 @@ const HEALTH: [
     19,
     "No automatic fix: this app does not delete files, and something in /tmp may be in use right now. A reboot clears it if /tmp is a tmpfs; otherwise look at what is there first.",
     async () => {
+      // du exits 1 when it meets a directory it cannot enter — /tmp always
+      // has some, as a user — yet still prints the total of what it could.
+      // That is a lower bound, which is all a "too large" threshold needs.
       const r = await run("du", ["-sx", "-B1", "/tmp"], 15_000);
       const size = Number(r.out.split(/\s+/)[0]);
-      return r.ok && Number.isFinite(size) && size > 2 * 1024 ** 3
+      return r.out !== "" && Number.isFinite(size) && size > 2 * 1024 ** 3
         ? { detail: `/tmp holds ${bytes(size)}` }
         : null;
     },

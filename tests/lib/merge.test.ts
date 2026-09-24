@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
-import type { Issue } from "../../type/issue.ts";
-import { merge, mergeIds, without } from "../../lib/merge.ts";
+import type { Issue } from "../../src/type/issue.ts";
+import { merge, mergeIds, without } from "../../src/lib/merge.ts";
 
 const issue = (id: string, severity: Issue["severity"] = "minor"): Issue => ({
   id,

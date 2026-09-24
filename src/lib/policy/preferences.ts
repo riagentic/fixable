@@ -16,7 +16,9 @@
 // applied unattended, and everything in it is one click away with the cost
 // stated and Undo behind it.
 //
-// Four answers put a row in this file:
+// Four answers put a row in this file (and two more, below, that came out of
+// later passes — a lockdown somebody set, and a value nothing reaches by
+// accident):
 //
 //   1. It is a plain preference — a toggle or a number in the system's own
 //      settings panels. Power, Screensaver, Notifications and Sound exist
@@ -50,8 +52,6 @@ const PANEL = group(
     // Power and idle. The class that caused a machine to suspend at one hour
     // when its owner had set "never".
     "d3-idle-brightness",
-    "d3-session-idle-zero",
-    "d3-numlock-remember",
     "critical-battery-late",
     "low-battery-late",
     "housekeeping-threshold",
@@ -63,6 +63,10 @@ const PANEL = group(
     // Notifications and sound.
     "notification-timeout",
     "notifications-fullscreen",
+    // Notifications on the lock screen are a toggle in the Notifications
+    // panel; hiding them is a choice about convenience, not a repair.
+    "lock-notifications",
+    "lock-notifications-gnome",
     "event-sounds",
     "d3-sounds-notification",
     "d3-power-notify-mouse",
@@ -77,6 +81,10 @@ const PANEL = group(
     "d3-fm-context-all",
     "d3-touchpad-typing",
     "fm-preload-limit",
+    // Delete confirmations — how many prompts stand between you and the trash
+    // is a file-manager preference, and a pro who turned them off meant it.
+    "fm-confirm-trash",
+    "fm-permanent-delete",
     // Retention and cache sizes — how much history you keep is a choice.
     "recent-files-forever",
     "recent-files-long",
@@ -101,7 +109,6 @@ const CAPABILITY = group(
     "automount-open",
     "fm-detect-content",
     "fm-thumbnail-inherit",
-    "greeter-quit",
     "lock-user-switch",
     "lock-media-control",
     "lock-keyboard-shortcuts",
@@ -185,6 +192,14 @@ const CAPABILITY = group(
     "t3-gpg-agent-max-ttl",
     "ssh-identities-only",
     "ssh-exit-on-forward-failure",
+    // Debian and Ubuntu ship both `yes` in /etc/ssh/ssh_config: untrusted X11
+    // breaks clipboard and GL in forwarded apps, and no GSSAPI breaks
+    // Kerberos single sign-on.
+    "ssh-x11-trusted",
+    "ssh-gssapi-auth",
+    // Strict pinning refuses any certificate from a root you installed — the
+    // whole of corporate TLS inspection, AV web shields and mitmproxy.
+    "ff-cert-pinning",
     // Git rows that change what a command does rather than how safe it is.
     "git-default-branch",
     "git-diff-algorithm",
@@ -199,6 +214,11 @@ const CAPABILITY = group(
     "git-core-fsmonitor",
     "git-pack-window-memory",
     "git-gpg-min-trust",
+    // Strict fsck refuses real repositories that carry old malformed objects,
+    // and the failure is a clone that will not finish.
+    "git-fsck-transfer",
+    "git-fsck-fetch",
+    "git-fsck-receive",
 
     // ---- second audit, over the rows added in the 2,009-check tranche ----
     // Browser capabilities a page may legitimately need, or that a person
@@ -255,7 +275,48 @@ const TRADE_OFF = group(
   "Optional — a genuine trade, not a fault. Turning it off buys privacy and " +
     "costs a protection; turning it on does the reverse. Which side you want " +
     "is yours to pick, so this one waits for you to pick it.",
-  ["ff2-safebrowsing-downloads"],
+  [
+    "ff2-safebrowsing-downloads",
+    "ff3-safebrowsing-provider",
+    // Opt-in protections that send something to do their job: the page URL
+    // in real time, a hashed credential prefix. Both are a user's choice.
+    "cr-safebrowsing-enhanced",
+    "cr2-password-leak-detect",
+  ],
+);
+
+/** 2c — a lockdown. Nobody reaches one by accident: an administrator, a
+ *  kiosk or school image, or a parental control put it there, and lifting it
+ *  unasked undoes somebody's policy on a machine that may be theirs. */
+const ADMIN_POLICY = group(
+  "Optional — this is a lockdown, and lockdowns are set on purpose: by an " +
+    "administrator, a kiosk or classroom image, or a parental control. " +
+    "Lifting one undoes that policy, so it happens only when you press this " +
+    'button and never on "Fix all". Undo puts the restriction back.',
+  [
+    "lockdown-save-to-disk",
+    "lockdown-printing",
+    "lockdown-print-setup",
+    "lockdown-command-line",
+    "lockdown-user-switching",
+    "lockdown-log-out",
+    "d3-lockdown-user-admin",
+    "d3-lockdown-app-handlers",
+  ],
+);
+
+/** 2d — off its default only because somebody changed it. The reason is not
+ *  visible from here, and "put the default back" is the app guessing it. */
+const DELIBERATE = group(
+  "Optional — nothing sets this by accident. It is off its default because " +
+    "somebody changed it, usually for a reason this app cannot see, so it is " +
+    'put back only when you press this button, never on "Fix all". Undo ' +
+    "restores your value.",
+  [
+    "git-symlinks-core",
+    "ssh-accept-new-host-key",
+    "ff3-accessibility-force",
+  ],
 );
 
 /** 3 — one write, many programs affected. */
@@ -300,6 +361,8 @@ export const OPTIONAL: Record<string, string> = Object.fromEntries([
   ...PANEL,
   ...CAPABILITY,
   ...TRADE_OFF,
+  ...ADMIN_POLICY,
+  ...DELIBERATE,
   ...BLAST_RADIUS,
 ]);
 
@@ -310,10 +373,11 @@ export const NO_BUTTON: Record<string, string> = Object.fromEntries([
 
 /** Checks withdrawn entirely by the same audit.
  *
- *  Two kinds, and neither is a judgement call: a row that writes the value the
- *  tool already uses (so it "fixes" nothing and reports on every machine), and
- *  a row whose file format means its key can never match, so it could never
- *  have worked. Both are checks for the sake of being checks. */
+ *  None is a judgement call: a row that writes the value the tool already uses
+ *  (so it "fixes" nothing and reports on every machine), a row whose key can
+ *  never match, a row that asks a question another row already asks, and a
+ *  row whose reading cannot mean what its title says. All are checks for the
+ *  sake of being checks. */
 export const RETIRED: Record<string, string> = {
   "git-tag-forcesign": "writes git's existing default — fixes nothing",
   "git-log-showsig": "writes git's existing default — fixes nothing",
@@ -335,4 +399,29 @@ export const RETIRED: Record<string, string> = {
   "etcmode-etc-machine-id":
     "asked to take root's write bit off a world-readable file — the value is " +
     "what identifies the machine, and the mode hides none of it",
+  "git-index-threads":
+    "writes git's existing default, and reported a tuned thread count as a fault",
+  "tb-js-in-mail":
+    "Thunderbird's real default is on and message JavaScript is already " +
+    "blocked by other means; turning it off breaks OAuth sign-in",
+  "cr2-network-time":
+    "names a dictionary of cached time data as if it were a boolean switch",
+  "cr2-safe-browsing-extended":
+    "the pre-Scout spelling of cr-safebrowsing-reporting — same question twice",
+  "d3-session-idle-zero": "same key as screen-idle-long, with a laxer limit",
+  "limit-watches": "same parameter as sysctl-inotify-watches",
+  "limit-pid-max": "same parameter as sysctl-pid-max",
+  "net-ipv6-privacy": "same parameter as sysctl-tempaddr",
+  "swappiness-high-ssd": "same parameter as sysctl-swappiness",
+  "etch-grub-lockdown":
+    "compared the whole quoted GRUB line for equality, so fired everywhere; " +
+    "hard-kernel-lockdown reads the lockdown actually in force",
+  "etch-apparmor-enabled":
+    "same whole-line comparison; hard-apparmor-cmdline asks for the one " +
+    "token that matters, on the command line actually booted",
+  "etc-grub-audit":
+    "same whole-line comparison, so it reported every machine; the tokens " +
+    "worth noticing each have a /proc/cmdline row now",
+  "etch-sysctl-conf-local":
+    "asked for a hand-kept file the app's own drop-in has replaced",
 };

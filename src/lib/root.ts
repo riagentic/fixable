@@ -205,8 +205,8 @@ export const buildScript = (
   }
   return [
     "#!/bin/sh",
-    "# Written by Fixable, run once as root, then deleted. Every line of this",
-    "# script is shown in the app before it runs.",
+    "# Written by Fixable, run once as root. Every line of this script is",
+    "# shown in the app before it runs.",
     "umask 077",
     ...ops.map(render),
     `echo "${MARK}done"`,

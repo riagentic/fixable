@@ -6,12 +6,12 @@
 
 <p align="center">
   <b>Everything wrong with your Linux desktop, in one list — with a button next to what is safe to fix.</b><br>
-  2,010 checks across security, privacy, performance, stability, resources and settings.<br>
+  2,001 checks across security, privacy, performance, stability, resources and settings.<br>
   Runs locally as a desktop app. Nothing leaves the machine, and nothing changes unless you press something.
 </p>
 
 <p align="center">
-  <code>v0.1.0</code> · <a href="LICENSE">MIT</a> · built on <a href="https://github.com/riagentic/aio">aio</a>
+  <code>v0.1.3</code> · <a href="LICENSE">MIT</a> · built on <a href="https://github.com/riagentic/aio">aio</a>
 </p>
 
 ## Run it — one line
@@ -65,7 +65,7 @@ refused by name, with the reason, in
 ## Develop
 
 ```sh
-deno task test      # 100 tests
+deno task test      # 118 tests
 deno task lint
 deno task compile   # release build → dist/
 ```

@@ -21,14 +21,17 @@ const FIREWALL: Check = {
     "deny policy immediately — that can drop a session you are working in. " +
     "Run `sudo ufw enable` yourself once you have checked the rules.",
   probe: async (): Promise<Finding | null> => {
-    const active = await run("systemctl", ["is-active", "ufw"], 5_000);
-    // Neither installed nor managed by systemd — nothing to report.
-    if (active.out === "") return null;
-    if (active.out === "active") return null;
-    const enabled = await run("systemctl", ["is-enabled", "ufw"], 5_000);
-    return {
-      detail: `ufw is ${active.out} (boot: ${enabled.out || "unknown"})`,
-    };
+    // ufw.conf, not systemd: `systemctl is-active` prints "inactive" for a
+    // unit that does not exist, and ufw.service is a oneshot that reads
+    // "active" even when ufw itself is disabled. `ENABLED` is ufw's own
+    // switch — the one `ufw enable` flips — and the file is world-readable.
+    const conf = await readText("/etc/ufw/ufw.conf");
+    if (conf === null) return null; // ufw is not installed
+    // Sourced as shell, so the last assignment wins.
+    const enabled = [...conf.matchAll(/^\s*ENABLED\s*=\s*"?(\w*)"?\s*$/gm)]
+      .at(-1)?.[1];
+    if (enabled?.toLowerCase() === "yes") return null;
+    return { detail: `ufw is installed but ENABLED=${enabled || "unset"}` };
   },
 };
 

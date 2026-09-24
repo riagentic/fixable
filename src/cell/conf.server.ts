@@ -10,7 +10,7 @@
 //      wrote. Silently overwriting someone's later edit would be precisely the
 //      harm this app exists to avoid.
 import { dirname } from "@std/path";
-import { readText } from "./sys.server.ts";
+import { absent, readText } from "./sys.server.ts";
 
 export type ConfWrite = {
   path: string;
@@ -33,27 +33,92 @@ export async function parentExists(path: string): Promise<boolean> {
   }
 }
 
-/** Replace a file's contents atomically, preserving its mode. */
+/** lstat, or null when nothing is there. */
+async function lstatOf(path: string): Promise<Deno.FileInfo | null> {
+  try {
+    return await Deno.lstat(path);
+  } catch (e) {
+    if (absent(e)) return null;
+    throw e;
+  }
+}
+
+/** Is `path` a symlink? A rename would replace the link itself with a plain
+ *  file — the dotfiles repo it pointed into silently stops being used — so a
+ *  linked config is reported, never rewritten. */
+export const isSymlink = async (path: string): Promise<boolean> =>
+  (await lstatOf(path))?.isSymlink ?? false;
+
+/** The contents of a regular file this module may replace, or null when there
+ *  is none. Refuses anything else, before a byte is written. */
+async function readOwn(
+  path: string,
+): Promise<{ text: string | null; mode: number }> {
+  const st = await lstatOf(path);
+  if (st === null) {
+    // A new config file is private by default: these hold tokens often
+    // enough that 0644 would be its own finding two rows down this list.
+    return { text: null, mode: 0o600 };
+  }
+  if (st.isSymlink) {
+    throw new Error(
+      `${path} is a symlink — refusing to replace it with a plain file; ` +
+        `edit the file it points to by hand`,
+    );
+  }
+  if (!st.isFile) throw new Error(`${path} is not a regular file`);
+  // Strict UTF-8 (readText): a lossy decode would corrupt `before`, and Undo
+  // would then "restore" damage.
+  return { text: await readText(path), mode: (st.mode ?? 0o600) & 0o7777 };
+}
+
+/** Replace a file's contents atomically and durably, preserving its mode.
+ *
+ *  The temp file is created exclusively, with the final mode from the first
+ *  byte (never readable under a looser umask, even for a moment), flushed to
+ *  disk before the rename — otherwise a power cut can leave the renamed file
+ *  empty — and removed on any failure. */
 export async function writeConf(
   path: string,
   next: string,
 ): Promise<ConfWrite> {
-  const before = await readText(path);
-  const tmp = `${path}.fixable-${Deno.pid}.tmp`;
-  await Deno.writeTextFile(tmp, next);
+  const { text: before, mode } = await readOwn(path);
+  const tmp = `${path}.fixable-${Deno.pid}-${
+    crypto.randomUUID().slice(0, 8)
+  }.tmp`;
+  const f = await Deno.open(tmp, { write: true, createNew: true, mode });
   try {
-    // A new config file is private by default: these hold tokens often enough
-    // that 0644 would be its own finding two rows down this very list.
-    const mode = before === null
-      ? 0o600
-      : (await Deno.stat(path)).mode ?? 0o600;
-    await Deno.chmod(tmp, mode & 0o7777);
+    try {
+      const data = new TextEncoder().encode(next);
+      for (let off = 0; off < data.length;) {
+        off += await f.write(data.subarray(off));
+      }
+      // `mode` at open is filtered by the umask; chmod makes it exact.
+      await Deno.chmod(tmp, mode);
+      await f.syncData();
+    } finally {
+      f.close();
+    }
     await Deno.rename(tmp, path);
   } catch (e) {
     await Deno.remove(tmp).catch(() => {});
     throw e;
   }
+  await syncDir(dirname(path));
   return { path, before, wrote: next };
+}
+
+/** Persist the rename itself. Best effort: the file is already correct, and
+ *  a filesystem that cannot fsync a directory is not a reason to fail. */
+async function syncDir(dir: string): Promise<void> {
+  try {
+    const d = await Deno.open(dir, { read: true });
+    try {
+      await d.sync();
+    } finally {
+      d.close();
+    }
+  } catch { /* not supported here */ }
 }
 
 /** Put back exactly what was there — or, if the file has moved on, put back
@@ -70,7 +135,7 @@ export const restoreConf = (
   narrow?: (text: string) => string,
 ) =>
 async (): Promise<void> => {
-  const current = await readText(w.path);
+  const { text: current } = await readOwn(w.path);
   if (current === w.wrote) {
     if (w.before === null) await Deno.remove(w.path);
     else await writeConf(w.path, w.before);
