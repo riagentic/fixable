@@ -10,7 +10,8 @@
     "platforms": [
       "host"
     ],
-    "out": "dist"
+    "out": "dist",
+    "electronRuntime": "online"
   },
   "nodeModulesDir": "auto",
   "fmt": {
